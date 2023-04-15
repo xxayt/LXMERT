@@ -29,21 +29,20 @@ SPLIT2NAME = {
     'test': 'test2015',
 }
 
-
+"""
+A VQA data example in json file:
+    {
+        "answer_type": "other",
+        "img_id": "COCO_train2014_000000458752",
+        "label": {
+            "net": 1
+        },
+        "question_id": 458752000,
+        "question_type": "what is this",
+        "sent": "What is this photo taken looking through?"
+    }
+"""
 class VQADataset:
-    """
-    A VQA data example in json file:
-        {
-            "answer_type": "other",
-            "img_id": "COCO_train2014_000000458752",
-            "label": {
-                "net": 1
-            },
-            "question_id": 458752000,
-            "question_type": "what is this",
-            "sent": "What is this photo taken looking through?"
-        }
-    """
     def __init__(self, splits: str):
         self.name = splits
         self.splits = splits.split(',')
@@ -145,6 +144,7 @@ class VQATorchDataset(Dataset):
             target = torch.zeros(self.raw_dataset.num_answers)
             for ans, score in label.items():
                 target[self.raw_dataset.ans2label[ans]] = score
+            # 问题id, 图片的目标框的特征向量, 目标框的坐标, 问题语句, 标签
             return ques_id, feats, boxes, ques, target
         else:
             return ques_id, feats, boxes, ques
