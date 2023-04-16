@@ -26,6 +26,7 @@ my fork：[xxayt/LXMERT (github.com)](https://github.com/xxayt/LXMERT)
 
 <img src=".\image\LXMERT预训练任务.png" alt="预训练任务" style="zoom:60%;" />
 
+- 数据集：
 - pre-train tasks：5个
   - 针对文本：Masked Cross-Modality LM
   - 针对图像：Masked Object Prediction via RoI-feature regression / via detected-label classification
@@ -43,8 +44,9 @@ my fork：[xxayt/LXMERT (github.com)](https://github.com/xxayt/LXMERT)
 - 训练：
   - 超参：$4 \text{ epoch},32 \text{ batch size}, 5e-5 \text{lr}$ 
   - 我的显卡：2080Ti，显存11264MiB
+  - 读取数据耗时：$>$ **100min**
   - 训练耗时：**80min/epoch**
-  - 验证耗时：**共约60min**
+  - 验证耗时：**约70min**
   
 - VQA效果（上传 [EvalAI](https://eval.ai/web/challenges/challenge-page/830/overview) 提交验证，目前只有challenge 2021可以提交）
 
@@ -59,6 +61,8 @@ my fork：[xxayt/LXMERT (github.com)](https://github.com/xxayt/LXMERT)
    {"test-standard": {"yes/no": 87.41, "number": 53.8, "other": 62.86, "overall": 72.05}}]
   ```
 
+  - Leaderboard截图：
+
   ![VQA test-std result](D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\VQA test-std result.png)
 
 #### GQA
@@ -71,50 +75,3 @@ my fork：[xxayt/LXMERT (github.com)](https://github.com/xxayt/LXMERT)
   - 我的显卡：2080Ti，显存11264MiB
 
 #### NLVR
-
-
-
-## MCAN
-
-论文：[Deep Modular Co-Attention Networks for Visual Question Answering (CVPR2019)](https://arxiv.org/abs/1906.10770)
-
-代码：[MILVLG/mcan-vqa (github.com)](https://github.com/MILVLG/mcan-vqa)
-
-my fork：[xxayt/MCAN (github.com)](https://github.com/xxayt/MCAN)
-
-### 1 结构
-
-<img src=".\image\MACN结构.png" alt="MACN结构" style="zoom:50%;" />
-
-- 问题和图像的表示（Question and Image Representations）
-- 深度协同注意力学习（Deep Co-Attention Learning）
-- 多模态融合和分类输出（Multimodal Fusion and Output Classifier）
-
-### 2 训练
-
-
-
-## ViLBERT
-
-论文：[ViLBERT: Pretraining Task-Agnostic Visiolinguistic Representations for Vision-and-Language Tasks (NeurIPS2019)](https://arxiv.org/abs/1908.02265)
-
-代码：[jiasenlu/vilbert_beta (github.com)](https://github.com/jiasenlu/vilbert_beta)
-
-my fork：[xxayt/ViLBERT (github.com)](https://github.com/xxayt/ViLBERT)
-
-### 1 结构
-
-<img src="D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\ViLBERT结构.png" alt="ViLBERT结构" style="zoom:50%;" />
-
-- 
-
-### 2 预训练
-
-
-
-### 3 微调
-
-#### VQA
-
-- 数据集：VQA 2.0
-- 
