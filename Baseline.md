@@ -51,12 +51,15 @@ my fork：[xxayt/LXMERT (github.com)](https://github.com/xxayt/LXMERT)
   |                  | src paper result (challenge 2019) | my result（challenge 2021） |
   | :--------------: | :-------------------------------: | :-------------------------: |
   | Local Validation |               69.9%               |           69.507%           |
-  |     Test-Dev     |              72.42%               |           71.677%           |
-  |  Test-Standard   |              72.54%               |           77.130%           |
+  |     Test-Dev     |              72.42%               |           71.83%            |
+  |  Test-Standard   |              72.54%               |           72.05%            |
 
-<img src="D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\VQA test-dev result.png" alt="VQA test-dev result" style="zoom:50%;" />
+  ```json
+  [{"test-dev": {"yes/no": 87.28, "number": 54.13, "other": 62.65, "overall": 71.83}}, 
+   {"test-standard": {"yes/no": 87.41, "number": 53.8, "other": 62.86, "overall": 72.05}}]
+  ```
 
-<img src="D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\VQA test-std result.png" alt="VQA test-std result" style="zoom:50%;" />
+  ![VQA test-std result](D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\VQA test-std result.png)
 
 #### GQA
 
