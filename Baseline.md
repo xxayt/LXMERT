@@ -8,7 +8,9 @@
 
 代码：[airsplay/lxmert (github.com)](https://github.com/airsplay/lxmert)
 
-**选择原因**：结构简单（可改进的空间大）；[效果较好](https://eval.ai/web/challenges/challenge-page/163/leaderboard/498)（VQA 2.0挑战赛中本结构的Ensemble版本至今第3名，github version版本至今第9名）；数据集（VQA 2.0）测试在可接受范围
+my fork：[xxayt/LXMERT (github.com)](https://github.com/xxayt/LXMERT)
+
+**选择原因**：结构简单（可改进的空间大）；数据集（VQA 2.0）测试在可接受范围
 
 ### 1 结构
 
@@ -32,8 +34,6 @@
 
 ### 3 微调
 
-
-
 #### VQA
 
 - 数据集：VQA 2.0
@@ -46,19 +46,23 @@
   - 训练耗时：**80min/epoch**
   - 验证耗时：**共约60min**
   
-- VQA效果（上传[VQA：视觉问答 (visualqa.org)](https://visualqa.org/challenge.html)提交验证）
+- VQA效果（上传 [EvalAI](https://eval.ai/web/challenges/challenge-page/830/overview) 提交验证，目前只有challenge 2021可以提交）
 
-  |                  | src repo result | my result |
-  | :--------------: | :-------------: | :-------: |
-  | Local Validation |      69.9%      |  69.507%  |
-  |     Test-Dev     |     72.42%      |           |
-  |  Test-Standard   |     72.54%      |           |
+  |                  | src paper result (challenge 2019) | my result（challenge 2021） |
+  | :--------------: | :-------------------------------: | :-------------------------: |
+  | Local Validation |               69.9%               |           69.507%           |
+  |     Test-Dev     |              72.42%               |           71.677%           |
+  |  Test-Standard   |              72.54%               |           77.130%           |
+
+<img src="D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\VQA test-dev result.png" alt="VQA test-dev result" style="zoom:50%;" />
+
+<img src="D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\VQA test-std result.png" alt="VQA test-std result" style="zoom:50%;" />
 
 #### GQA
 
 - 数据集
-  - 图像：分别对Visual Genome、MS COCO数据集，用faster-rcnn提取训练和测试的目标特征图像（训练集30G，测试集。。），
-  - 文本：
+  - 图像：分别对Visual Genome、MS COCO数据集，用faster-rcnn提取训练和测试的目标特征图像（训练集至少30G），
+  - 文本：VQA 2.0（训练集180M，验证集25M，提交测试集590M）
 - 训练：
   - 超参：$\text{epoch: }4,\text{batch size: 32},\text{lr: }1e-5$ 
   - 我的显卡：2080Ti，显存11264MiB
@@ -69,7 +73,11 @@
 
 ## MCAN
 
-[Deep Modular Co-Attention Networks for Visual Question Answering (CVPR2019)](https://arxiv.org/abs/1906.10770)
+论文：[Deep Modular Co-Attention Networks for Visual Question Answering (CVPR2019)](https://arxiv.org/abs/1906.10770)
+
+代码：[MILVLG/mcan-vqa (github.com)](https://github.com/MILVLG/mcan-vqa)
+
+my fork：[xxayt/MCAN (github.com)](https://github.com/xxayt/MCAN)
 
 ### 1 结构
 
@@ -85,5 +93,25 @@
 
 ## ViLBERT
 
-[ViLBERT: Pretraining Task-Agnostic Visiolinguistic Representations for Vision-and-Language Tasks (NIPS2019)](https://arxiv.org/abs/1908.02265)
+论文：[ViLBERT: Pretraining Task-Agnostic Visiolinguistic Representations for Vision-and-Language Tasks (NeurIPS2019)](https://arxiv.org/abs/1908.02265)
 
+代码：[jiasenlu/vilbert_beta (github.com)](https://github.com/jiasenlu/vilbert_beta)
+
+my fork：[xxayt/ViLBERT (github.com)](https://github.com/xxayt/ViLBERT)
+
+### 1 结构
+
+<img src="D:\2Codefield\VS_code\python\GeWuLab\LXMERT\image\ViLBERT结构.png" alt="ViLBERT结构" style="zoom:50%;" />
+
+- 
+
+### 2 预训练
+
+
+
+### 3 微调
+
+#### VQA
+
+- 数据集：VQA 2.0
+- 
