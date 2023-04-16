@@ -3,6 +3,10 @@
 *.zip
 /snap
 
+**/__pycache__/
+
 /data/
+
+test.py
 # !data/**/*.py
 # !data/**/*.md

@@ -5,6 +5,7 @@ import os
 import collections
 
 import torch
+import time
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
@@ -82,6 +83,7 @@ class VQA:
         iter_wrapper = (lambda x: tqdm(x, total=len(loader))) if args.tqdm else (lambda x: x)
 
         best_valid = 0.
+        start_time = time.time()
         for epoch in range(args.epochs):
             quesid2ans = {}
             for i, (ques_id, feats, boxes, sent, target) in iter_wrapper(enumerate(loader)):
@@ -114,6 +116,8 @@ class VQA:
 
                 log_str += "Epoch %d: Valid %0.2f\n" % (epoch, valid_score * 100.) + \
                            "Epoch %d: Best %0.2f\n" % (epoch, best_valid * 100.)
+                log_str += "This epoth takes: Time %0.2f\n" % (time.time() - start_time)
+                start_time = time.time()
 
             print(log_str, end='')
 
@@ -174,8 +178,13 @@ class VQA:
 
 
 if __name__ == "__main__":
+    sum_start_time = time.time()
     # Build Class
     vqa = VQA()
+    with open(args.output + "/log.log", 'a') as f:
+        f.write("Deal with dataset takes: Time %0.2f\n" % (time.time() - sum_start_time))
+        f.flush()
+
 
     # Load VQA model weights
     # Note: It is different from loading LXMERT pre-trained weights.
@@ -191,7 +200,7 @@ if __name__ == "__main__":
                                shuffle=False, drop_last=False),
                 dump=os.path.join(args.output, 'test_predict.json')
             )
-        elif 'val' in args.test:    
+        elif 'val' in args.test:
             # Since part of valididation data are used in pre-training/fine-tuning,
             # only validate on the minival set.
             result = vqa.evaluate(

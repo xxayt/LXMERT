@@ -8,4 +8,5 @@ tqdm
 boto3
 # Used for downloading models over HTTP
 requests
+numpy
 
