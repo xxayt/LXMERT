@@ -55,7 +55,7 @@ we provide descriptions for each dataset to take care of all details.
 ### General 
 The code requires **Python 3** and please install the Python dependencies with the command:
 ```bash
-pip install -r requirements.txt
+pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 ```
 
 By the way, a Python 3 virtual environment could be set up and run with:
