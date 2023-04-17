@@ -5,6 +5,7 @@ import sys
 import csv
 import base64
 import time
+import logging
 
 import numpy as np
 
@@ -53,3 +54,53 @@ def load_obj_tsv(fname, topk=None):
     print("Loaded %d images in file %s in %d seconds." % (len(data), fname, elapsed_time))
     return data
 
+
+def create_logging(log_file=None, log_level=logging.INFO, file_mode='w'):
+    """Initialize and get a logger.
+
+    If the logger has not been initialized, this method will initialize the
+    logger by adding one or two handlers, otherwise the initialized logger will
+    be directly returned. During initialization, a StreamHandler will always be
+    added. If `log_file` is specified and the process rank is 0, a FileHandler
+    will also be added.
+
+    Args:
+        log_file (str | None): The log filename. If specified, a FileHandler
+            will be added to the logger.
+        log_level (int): The logger level. Note that only the process of
+            rank 0 is affected, and other processes will set the level to
+            "Error" thus be silent most of the time.
+        file_mode (str): The file mode used in opening log file.
+            Defaults to 'w'.
+
+    Returns:
+        logging.Logger: The expected logger.
+    """
+    logger = logging.getLogger()
+
+    handlers = []
+    stream_handler = logging.StreamHandler()
+    handlers.append(stream_handler)
+
+    rank = 0
+
+    # only rank 0 will add a FileHandler
+    if rank == 0 and log_file is not None:
+        # Here, the default behaviour of the official logger is 'a'. Thus, we
+        # provide an interface to change the file mode to the default
+        # behaviour.
+        file_handler = logging.FileHandler(log_file, file_mode)
+        handlers.append(file_handler)
+
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    for handler in handlers:
+        handler.setFormatter(formatter)
+        handler.setLevel(log_level)
+        logger.addHandler(handler)
+
+    if rank == 0:
+        logger.setLevel(log_level)
+    else:
+        logger.setLevel(logging.ERROR)
+
+    return logger

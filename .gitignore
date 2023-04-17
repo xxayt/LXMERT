@@ -1,7 +1,8 @@
 *.caffemodel
 *.tsv
 *.zip
-/snap
+/logs
+/logs
 
 **/__pycache__/
 

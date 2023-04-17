@@ -68,7 +68,7 @@ class NLVR2:
         else:
             self.optim = args.optimizer(list(self.model.parameters()), args.lr)
 
-        self.output = args.output
+        self.output = args.save_dir
         os.makedirs(self.output, exist_ok=True)
 
     def train(self, train_tuple, eval_tuple):
@@ -160,13 +160,13 @@ if __name__ == "__main__":
             nlvr2.predict(
                 get_tuple(args.test, bs=args.batch_size,
                           shuffle=False, drop_last=False),
-                dump=os.path.join(args.output, 'hidden_predict.csv')
+                dump=os.path.join(args.save_dir, 'hidden_predict.csv')
             )
         elif 'test' in args.test or 'valid' in args.test:
             result = nlvr2.evaluate(
                 get_tuple(args.test, bs=args.batch_size,
                           shuffle=False, drop_last=False),
-                dump=os.path.join(args.output, '%s_predict.csv' % args.test)
+                dump=os.path.join(args.save_dir, '%s_predict.csv' % args.test)
             )
             print(result)
         else:

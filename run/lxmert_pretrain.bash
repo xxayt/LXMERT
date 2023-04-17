@@ -2,7 +2,7 @@
 name=lxmert
 
 # Create dirs and make backup
-output=snap/pretrain/$name
+output=logs/pretrain/$name
 mkdir -p $output/src
 cp -r src/* $output/src/
 cp $0 $output/run.bash
@@ -17,5 +17,5 @@ CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PYTHONPATH:./src \
     --llayers 9 --xlayers 5 --rlayers 5 \
     --fromScratch \
     --batchSize 256 --optim bert --lr 1e-4 --epochs 20 \
-    --tqdm --output $output ${@:2}
+    --tqdm --save_dir $output ${@:2}
 

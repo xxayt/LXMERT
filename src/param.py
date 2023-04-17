@@ -34,6 +34,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # Data Splits
+    parser.add_argument('--name', required=True, type=str, help='create model name')
     parser.add_argument("--train", default='train')
     parser.add_argument("--valid", default='valid')
     parser.add_argument("--test", default=None)
@@ -47,7 +48,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=9595, help='random seed')
 
     # Debugging
-    parser.add_argument('--output', type=str, default='snap/test')
+    parser.add_argument('--save_dir', type=str, default='logs/test')
     parser.add_argument("--fast", action='store_const', default=False, const=True)
     parser.add_argument("--tiny", action='store_const', default=False, const=True)
     parser.add_argument("--tqdm", action='store_const', default=False, const=True)

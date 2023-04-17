@@ -74,7 +74,7 @@ class GQA:
         else:
             self.optim = args.optimizer(list(self.model.parameters()), args.lr)
 
-        self.output = args.output
+        self.output = args.save_dir
         os.makedirs(self.output, exist_ok=True)
 
     def train(self, train_tuple, eval_tuple):
@@ -188,13 +188,13 @@ if __name__ == "__main__":
             gqa.predict(
                 get_tuple(args.test, bs=args.batch_size,
                           shuffle=False, drop_last=False),
-                dump=os.path.join(args.output, 'submit_predict.json')
+                dump=os.path.join(args.save_dir, 'submit_predict.json')
             )
         if 'testdev' in args.test:
             result = gqa.evaluate(
                 get_tuple('testdev', bs=args.batch_size,
                           shuffle=False, drop_last=False),
-                dump=os.path.join(args.output, 'testdev_predict.json')
+                dump=os.path.join(args.save_dir, 'testdev_predict.json')
             )
             print(result)
     else:

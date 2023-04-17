@@ -389,7 +389,7 @@ class LXMERT:
 
     def save(self, name):
         torch.save(self.model.state_dict(),
-                   os.path.join(args.output, "%s_LXRT.pth" % name))
+                   os.path.join(args.save_dir, "%s_LXRT.pth" % name))
 
     def load(self, path):
         print("Load BERT extractor from %s" % path)

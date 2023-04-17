@@ -31,16 +31,16 @@ SPLIT2NAME = {
 
 """
 A VQA data example in json file:
-    {
-        "answer_type": "other",
-        "img_id": "COCO_train2014_000000458752",
-        "label": {
-            "net": 1
-        },
-        "question_id": 458752000,
-        "question_type": "what is this",
-        "sent": "What is this photo taken looking through?"
-    }
+{
+    "answer_type": "other",
+    "img_id": "COCO_train2014_000000458752",
+    "label": {
+        "net": 1
+    },
+    "question_id": 458752000,
+    "question_type": "what is this",
+    "sent": "What is this photo taken looking through?"
+}
 """
 class VQADataset:
     def __init__(self, splits: str):
