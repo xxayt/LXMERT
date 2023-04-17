@@ -6,15 +6,18 @@ import collections
 
 import torch
 import time
+import datetime
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
-
+from timm.utils import AverageMeter
+# 
 from param import args
+from utils import create_logging
 from pretrain.qa_answer_table import load_lxmert_qa
 from tasks.vqa_model import VQAModel
 from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
-
+# 创建具有命名字段的 tuple 子类的 factory 函数 (具名元组)
 DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
 
 
@@ -32,7 +35,9 @@ def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False) -> DataT
 
 
 class VQA:
-    def __init__(self):
+    def __init__(self, logger):
+        # logger
+        self.logger = logger
         # Datasets
         self.train_tuple = get_data_tuple(
             args.train, bs=args.batch_size, shuffle=True, drop_last=True
@@ -61,24 +66,27 @@ class VQA:
             self.model.lxrt_encoder.multi_gpu()
 
         # Loss and Optimizer
-        self.bce_loss = nn.BCEWithLogitsLoss()
+        self.loss_function = nn.BCEWithLogitsLoss()
         if 'bert' in args.optim:
             batch_per_epoch = len(self.train_tuple.loader)
             t_total = int(batch_per_epoch * args.epochs)
-            print("BertAdam Total Iters: %d" % t_total)
+            self.logger.info(f"BertAdam Total Iters: {t_total}")
             from lxrt.optimization import BertAdam
-            self.optim = BertAdam(list(self.model.parameters()),
+            self.optimizer = BertAdam(list(self.model.parameters()),
                                   lr=args.lr,
                                   warmup=0.1,
                                   t_total=t_total)
         else:
-            self.optim = args.optimizer(self.model.parameters(), args.lr)
+            self.optimizer = args.optimizer(self.model.parameters(), args.lr)
         
         # Output Directory
-        self.output = args.output
+        self.output = args.save_dir
         os.makedirs(self.output, exist_ok=True)
 
     def train(self, train_tuple, eval_tuple):
+        self.logger.info("Start training")
+        start_time = time.time()
+
         dset, loader, evaluator = train_tuple
         iter_wrapper = (lambda x: tqdm(x, total=len(loader))) if args.tqdm else (lambda x: x)
 
@@ -86,25 +94,27 @@ class VQA:
         start_time = time.time()
         for epoch in range(args.epochs):
             quesid2ans = {}
-            for i, (ques_id, feats, boxes, sent, target) in iter_wrapper(enumerate(loader)):
-
+            for iter, (ques_id, feats, boxes, sent, target) in iter_wrapper(enumerate(loader)):
                 self.model.train()
-                self.optim.zero_grad()
+                self.optimizer.zero_grad()
 
                 feats, boxes, target = feats.cuda(), boxes.cuda(), target.cuda()
-                logit = self.model(feats, boxes, sent)
-                assert logit.dim() == target.dim() == 2
-                loss = self.bce_loss(logit, target)
-                loss = loss * logit.size(1)
+                output = self.model(feats, boxes, sent)
+                assert output.dim() == target.dim() == 2
+                loss = self.loss_function(output, target)
+                loss = loss * output.size(1)
 
                 loss.backward()
+                # 为解决梯度爆炸问题，设置梯度截断(设置梯度大小的上限)
                 nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
-                self.optim.step()
+                self.optimizer.step()
 
-                score, label = logit.max(1)
+                score, label = output.max(1)
                 for qid, l in zip(ques_id, label.cpu().numpy()):
                     ans = dset.label2ans[l]
                     quesid2ans[qid.item()] = ans
+
+                
 
             log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, evaluator.evaluate(quesid2ans) * 100.)
 
@@ -127,6 +137,11 @@ class VQA:
 
         self.save("LAST")
 
+        # 训练总时间
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        self.logger.info('Training time {}'.format(total_time_str))
+
     def predict(self, eval_tuple: DataTuple, dump=None):
         """
         Predict the answers to questions in a data split.
@@ -142,8 +157,8 @@ class VQA:
             ques_id, feats, boxes, sent = datum_tuple[:4]   # Avoid seeing ground truth
             with torch.no_grad():
                 feats, boxes = feats.cuda(), boxes.cuda()
-                logit = self.model(feats, boxes, sent)
-                score, label = logit.max(1)
+                output = self.model(feats, boxes, sent)
+                score, label = output.max(1)
                 for qid, l in zip(ques_id, label.cpu().numpy()):
                     ans = dset.label2ans[l]
                     quesid2ans[qid.item()] = ans
@@ -168,23 +183,26 @@ class VQA:
         return evaluator.evaluate(quesid2ans)
 
     def save(self, name):
-        torch.save(self.model.state_dict(),
-                   os.path.join(self.output, "%s.pth" % name))
+        torch.save(self.model.state_dict(), os.path.join(self.output, "%s.pth" % name))
 
     def load(self, path):
-        print("Load model from %s" % path)
+        self.logger.info("Load model from %s" % path)
         state_dict = torch.load("%s.pth" % path)
         self.model.load_state_dict(state_dict)
 
+def main(args):
+    # get logger
+    creat_time = time.strftime("%Y%m%d-%H%M%S", time.localtime())  # 获取训练创建时间
+    args.path_log = args.save_dir  # 确定训练log保存路径
+    os.makedirs(args.path_log, exist_ok=True)  # 创建训练log保存路径
+    logger = create_logging(os.path.join(args.path_log, '%s-%s-train.log' % (creat_time, args.name)))  # 创建训练保存log文件
 
-if __name__ == "__main__":
-    sum_start_time = time.time()
     # Build Class
     vqa = VQA()
-    with open(args.output + "/log.log", 'a') as f:
-        f.write("Deal with dataset takes: Time %0.2f\n" % (time.time() - sum_start_time))
-        f.flush()
 
+    # print args
+    for param in sorted(vars(args).keys()):  # 遍历args的属性对象
+        logger.info('--{0} {1}'.format(param, vars(args)[param]))
 
     # Load VQA model weights
     # Note: It is different from loading LXMERT pre-trained weights.
@@ -198,7 +216,7 @@ if __name__ == "__main__":
             vqa.predict(
                 get_data_tuple(args.test, bs=950,
                                shuffle=False, drop_last=False),
-                dump=os.path.join(args.output, 'test_predict.json')
+                dump=os.path.join(args.save_dir, 'test_predict.json')
             )
         elif 'val' in args.test:
             # Since part of valididation data are used in pre-training/fine-tuning,
@@ -206,18 +224,19 @@ if __name__ == "__main__":
             result = vqa.evaluate(
                 get_data_tuple('minival', bs=950,
                                shuffle=False, drop_last=False),
-                dump=os.path.join(args.output, 'minival_predict.json')
+                dump=os.path.join(args.save_dir, 'minival_predict.json')
             )
-            print(result)
+            logger.info(result)
         else:
             assert False, "No such test option for %s" % args.test
     else:
-        print('Splits in Train data:', vqa.train_tuple.dataset.splits)
+        logger.info('Splits in Train data:', vqa.train_tuple.dataset.splits)
         if vqa.valid_tuple is not None:
-            print('Splits in Valid data:', vqa.valid_tuple.dataset.splits)
-            print("Valid Oracle: %0.2f" % (vqa.oracle_score(vqa.valid_tuple) * 100))
+            logger.info('Splits in Valid data:', vqa.valid_tuple.dataset.splits)
+            logger.info("Valid Oracle: %0.2f" % (vqa.oracle_score(vqa.valid_tuple) * 100))
         else:
-            print("DO NOT USE VALIDATION")
+            logger.info("DO NOT USE VALIDATION")
         vqa.train(vqa.train_tuple, vqa.valid_tuple)
 
-
+if __name__ == "__main__":
+    main(args)
