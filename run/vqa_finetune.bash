@@ -2,8 +2,7 @@
 name=$2
 
 # Save logs and models under logs/vqa; make backup.
-task = vqa
-output=logs/$task/$name
+output=logs/vqa/$name
 mkdir -p $output/src
 cp -r src/* $output/src/
 cp $0 $output/run.bash
