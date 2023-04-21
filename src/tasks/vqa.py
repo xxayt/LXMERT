@@ -198,7 +198,7 @@ def main(args):
     logger = create_logging(os.path.join(args.path_log, '%s-%s-train.log' % (creat_time, args.name)))  # 创建训练保存log文件
 
     # Build Class
-    vqa = VQA()
+    vqa = VQA(logger)
 
     # print args
     for param in sorted(vars(args).keys()):  # 遍历args的属性对象
