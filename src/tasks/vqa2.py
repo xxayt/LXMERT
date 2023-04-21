@@ -14,7 +14,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 # 
 from param import args
-from utils import create_logging
+from utils import *
 from pretrain.qa_answer_table import load_lxmert_qa
 from tasks.vqa_model import VQAModel
 from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
@@ -198,27 +198,24 @@ def main(args):
     args.path_log = args.save_dir  # 确定训练log保存路径
     os.makedirs(args.path_log, exist_ok=True)  # 创建训练log保存路径
     logger = create_logging(os.path.join(args.path_log, '%s-%s-train.log' % (creat_time, args.name)))  # 创建训练保存log文件
-
-    # get datasets
-    train_tuple = get_data_tuple(args.train, bs=args.batch_size, shuffle=True, drop_last=True)
-    valid_tuple = get_data_tuple(args.valid, bs=1024, shuffle=False, drop_last=False) if args.valid != "" else None
-
+    # tensorboard为acc和loss画图
+    tb_writer = SummaryWriter(args.path_log)
     # print args
     for param in sorted(vars(args).keys()):  # 遍历args的属性对象
         logger.info('--{0} {1}'.format(param, vars(args)[param]))
 
+    # get datasets
+    train_tuple = get_data_tuple(args.train, bs=args.batch_size, shuffle=True, drop_last=True)
+    valid_tuple = get_data_tuple(args.valid, bs=1024, shuffle=False, drop_last=False) if args.valid != "" else None
     # get net
     logger.info(f"Creating model: VQAModel")
     model = VQAModel(train_tuple.dataset.num_answers)
-    model.cuda()
-    model = torch.nn.DataParallel(model)
-
     # get criterion 损失函数
     loss_function = nn.BCEWithLogitsLoss()
     # get optimizer 优化器
     if 'bert' in args.optim:
-        batch_per_epoch = len(train_tuple.loader)
-        t_total = int(batch_per_epoch * args.epochs)
+        batch_per_epoch = len(train_tuple.loader)  # 90
+        t_total = int(batch_per_epoch * args.epochs)  # 90 * 4
         print(f"Batch per epoch: {batch_per_epoch}, Total Iters: {t_total}")
         logger.info(f"BertAdam Total Iters: {t_total}")
         from lxrt.optimization import BertAdam
@@ -229,24 +226,22 @@ def main(args):
     else:
         optimizer = args.optimizer(model.parameters(), args.lr)
 
-    # tensorboard为acc和loss画图
-    tb_writer = SummaryWriter(args.path_log)
-
     # load pre-trained weights 加载预训练权重
     if args.load_lxmert is not None:
-        # 不走这里 #
         print("Loading LXMERT weights from %s" % args.load_lxmert)
         model.lxrt_encoder.load(args.load_lxmert)
     if args.load_lxmert_qa is not None:
-        # 走这里 #
         print("Loading LXMERT QA weights from %s" % args.load_lxmert_qa)
         load_lxmert_qa(path=args.load_lxmert_qa, model=model, label2ans=train_tuple.dataset.label2ans, logger=logger)
     # load VQA weights
-    if args.load is not None:
-        logger.info("Load VQA model from %s" % args.load)
-        state_dict = torch.load("%s.pth" % args.load)
-        model.load_state_dict(state_dict)
+    # if args.load is not None:
+    #     logger.info("Load VQA model from %s" % args.load)
+    #     state_dict = torch.load("%s.pth" % args.load)
+    #     model.load_state_dict(state_dict)
     
+    model.cuda()
+    model = torch.nn.DataParallel(model)
+
     # Train
     if args.test is None:
         # if valid_tuple is not None:
@@ -256,6 +251,7 @@ def main(args):
         #     logger.info("DO NOT USE VALIDATION")
         # vqa.train(train_tuple, valid_tuple)
 
+        max_accuracy = 0.0
         logger.info("Start training")
         best_acc1 = 0.0
         start_time = time.time()
@@ -263,13 +259,15 @@ def main(args):
         for epoch in range(args.epochs):
             # train
             train_loss, train_acc = train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epoch, logger, args)
-            save("LAST")
+            # save("LAST")
+            save_checkpoint(epoch, model, optimizer, max_accuracy, args, logger, save_name='Latest')
             # validate
             logger.info(f"**********Latest val***********")
             val_loss, val_acc = validate(valid_tuple, model, loss_function, epoch, logger, args)
             if val_acc > best_acc1:
                 best_acc1 = val_acc
-                save("BEST")
+                save_checkpoint(epoch, model, optimizer, max_accuracy, args, logger, save_name='Best')
+                # save("BEST")
             logger.info('Exp path: %s' % args.path_log)
 
             tags = ["train_loss", "train_acc", "val_loss", "val_acc", "learning_rate"]
@@ -282,6 +280,7 @@ def main(args):
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         logger.info('Training time {}'.format(total_time_str))
+    '''
     # Test
     else:
         args.fast = args.tiny = False       # Always loading all data in test
@@ -304,6 +303,7 @@ def main(args):
 ############################################################
     # Build Class
     vqa = VQA()
+    '''
 
 def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epoch, logger, args):
     Dataset, train_loader, evaluator = train_tuple
@@ -326,8 +326,9 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         output = model(feats, boxes, sent)
         assert output.dim() == target.dim() == 2
         loss = loss_function(output, target)
-        loss = loss * output.size(1)
-        print("output.size(1):", output.size(1))
+        # loss = loss * output.size(1)
+        print("output.size: ", output.size())
+        print("output.size(1):", output.size(1))  # 3129
         acc1, label = output.max(1)
 
         loss.backward()  # compute gradients based on current loss
@@ -343,11 +344,14 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         # 储存batch_time和loss
         batch_time.update(time.time() - end)  # 记录每次迭代batch所需时间
         end = time.time()
+        print("loss.item():", loss.item())
+        print("output.size(0):", output.size(0))  # 32
+        print("acc1.item():", acc1.item())
         loss_meter.update(loss.item(), output.size(0))  # output.size(0)
         acc1_meter.update(acc1.item(), output.size(0))
 
         # log输出训练参数
-        if iter % 50 == 0:
+        if iter % 20 == 0:
             etas = batch_time.avg * (num_steps - iter)
             # lr = optimizer.param_groups[0]['lr']
             # memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
@@ -358,10 +362,48 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
                 f'time {batch_time.val:.4f} ({batch_time.avg:.4f})\t'
                 f'loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
                 f'Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})')
+    epoch_time = time.time() - start
+    logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
 
 @torch.no_grad()
 def validate(val_loader, model, loss_function, epoch, logger, args):
+    logger.info('eval epoch {}'.format(epoch))
+    model.eval()
 
+    quesid2ans = {}
+    batch_time = AverageMeter()
+    loss_meter = AverageMeter()
+    acc1_meter = AverageMeter()
+    end = time.time()
+    for iter, (ques_id, feats, boxes, sent, target) in enumerate(val_loader):
+        feats = feats.cuda(non_blocking=True)
+        boxes = boxes.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
+
+        output = model(feats, boxes, sent)
+        assert output.dim() == target.dim() == 2
+        loss = loss_function(output, target)
+        loss = loss * output.size(1)
+        acc1, label = output.max(1)
+
+        for qid, l in zip(ques_id, label.cpu().numpy()):
+            ans = val_loader.dataset.label2ans[l]
+            quesid2ans[qid.item()] = ans
+
+        # 更新记录
+        loss_meter.update(loss.item(), target.size(0))
+        acc1_meter.update(acc1.item(), target.size(0))
+        batch_time.update(time.time() - end)
+        end = time.time()
+        # log输出测试参数
+        if iter % 20 == 0:
+            logger.info(
+                f'Test: [{iter}/{len(val_loader)}]\t'
+                f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
+                f'Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t')
+    logger.info(f' * Acc@1 {acc1_meter.avg:.3f}')
+    return acc1_meter.avg, loss_meter.avg
 
 
 if __name__ == "__main__":

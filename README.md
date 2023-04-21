@@ -88,11 +88,12 @@ also available on Google Drive and Baidu Drive (see [Alternative Download](#alte
 4. Before fine-tuning on whole VQA 2.0 training set, verifying the script and model on a small training set (512 images) is recommended. 
 The first argument `0` is GPU id. The second argument `vqa_lxr_tiny` is the name of this experiment.
     ```bash
-    bash run/vqa_finetune.bash 0 vqa_lxr_tiny --tiny
+    bash run/vqa_finetune.bash 0 vqa_lxr_tiny_0 --tiny
+    bash run/vqa2_finetune.bash 0 vqa2_lxr_tiny_0 --tiny
     ```
 5. If no bug came out, then the model is ready to be trained on the whole VQA corpus:
     ```bash
-    bash run/vqa_finetune.bash 1 vqa_lxr
+    bash run/vqa_finetune.bash 0 vqa_lxr
     ```
 It takes around 8 hours (2 hours per epoch * 4 epochs) to converge. 
 The **logs** and **model snapshots** will be saved under folder `logs/vqa/vqa_lxr`. 

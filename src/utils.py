@@ -6,8 +6,16 @@ import csv
 import base64
 import time
 import logging
+import os
+import torch
 
 import numpy as np
+
+try:
+    # noinspection PyUnresolvedReferences
+    from apex import amp
+except ImportError:
+    amp = None
 
 csv.field_size_limit(sys.maxsize)
 FIELDNAMES = ["img_id", "img_h", "img_w", "objects_id", "objects_conf",
@@ -104,3 +112,25 @@ def create_logging(log_file=None, log_level=logging.INFO, file_mode='w'):
         logger.setLevel(logging.ERROR)
 
     return logger
+
+def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger):
+    save_state = {'model': model.state_dict(),
+                  'optimizer': optimizer.state_dict(),
+                  'lr_scheduler': lr_scheduler.state_dict(),
+                  'max_accuracy': max_accuracy,
+                  'epoch': epoch,
+                  'config': config}
+    if config.AMP_OPT_LEVEL != "O0":
+        save_state['amp'] = amp.state_dict()
+    '''
+    # 保存当前epoch参数
+    save_path = os.path.join(config.OUTPUT, f'ckpt_epoch_{epoch}.pth')
+    logger.info(f"{save_path} saving......")
+    torch.save(save_state, save_path)
+    logger.info(f"{save_path} saved !!!")
+    '''
+    # 保存最新epoch参数
+    lastest_save_path = os.path.join(config.OUTPUT, f'latest.pth')
+    # logger.info(f"{lastest_save_path} saving......")
+    torch.save(save_state, lastest_save_path)
+    logger.info(f"{lastest_save_path} saved !!!")

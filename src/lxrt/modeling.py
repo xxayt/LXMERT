@@ -332,7 +332,7 @@ class BertAttention(nn.Module):
 
 class BertAttOutput(nn.Module):
     def __init__(self, config):
-        print("BertAttOutput init")
+        # print("BertAttOutput init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
@@ -350,7 +350,7 @@ class BertAttOutput(nn.Module):
 #################################################################################
 class BertSelfattLayer(nn.Module):
     def __init__(self, config):
-        print("BertSelfattLayer init")
+        # print("BertSelfattLayer init")
         super().__init__()
         self.self = BertAttention(config)
         self.output = BertAttOutput(config)
@@ -363,7 +363,7 @@ class BertSelfattLayer(nn.Module):
 
 class BertIntermediate(nn.Module):
     def __init__(self, config):
-        print("BertIntermediate init")
+        # print("BertIntermediate init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
         if isinstance(config.hidden_act, str) or (sys.version_info[0] == 2 and isinstance(config.hidden_act, unicode)):
@@ -378,7 +378,7 @@ class BertIntermediate(nn.Module):
 
 class BertOutput(nn.Module):
     def __init__(self, config):
-        print("BertOutput init")
+        # print("BertOutput init")
         super().__init__()
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
@@ -392,7 +392,7 @@ class BertOutput(nn.Module):
 
 class BertLayer(nn.Module):
     def __init__(self, config):
-        print("BertLayer init")
+        # print("BertLayer init")
         super().__init__()
         self.attention = BertSelfattLayer(config)
         self.intermediate = BertIntermediate(config)
@@ -415,7 +415,7 @@ class BertLayer(nn.Module):
 #################################################################################
 class BertCrossattLayer(nn.Module):
     def __init__(self, config):
-        print("BertCrossattLayer init")
+        # print("BertCrossattLayer init")
         super().__init__()
         self.att = BertAttention(config)
         self.output = BertAttOutput(config)
@@ -427,7 +427,7 @@ class BertCrossattLayer(nn.Module):
 
 class LXRTXLayer(nn.Module):
     def __init__(self, config):
-        print("LXRTXLayer init")
+        # print("LXRTXLayer init")
         super().__init__()
         # The cross-attention Layer
         self.visual_attention = BertCrossattLayer(config)
@@ -483,7 +483,7 @@ class LXRTXLayer(nn.Module):
 #################################################################################
 class VisualFeatEncoder(nn.Module):
     def __init__(self, config):
-        print("VisualFeatEncoder init")
+        # print("VisualFeatEncoder init")
         super().__init__()
         feat_dim = VISUAL_CONFIG.visual_feat_dim
         pos_dim = VISUAL_CONFIG.visual_pos_dim
@@ -512,7 +512,7 @@ class VisualFeatEncoder(nn.Module):
 
 class LXRTEncoder(nn.Module):
     def __init__(self, config):
-        print("LXRTEncoder init")
+        # print("LXRTEncoder init")
         super().__init__()
 
         # Obj-level image embedding layer
@@ -566,7 +566,7 @@ class BertPreTrainedModel(nn.Module):
         a simple interface for dowloading and loading pretrained models.
     """
     def __init__(self, config, *inputs, **kwargs):
-        print("BertPreTrainedModel init")
+        # print("BertPreTrainedModel init")
         super().__init__()
         if not isinstance(config, BertConfig):
             raise ValueError(
@@ -732,7 +732,7 @@ class BertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
     """
     def __init__(self, config):
-        print("BertEmbeddings init")
+        # print("BertEmbeddings init")
         super().__init__()
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size, padding_idx=0)
@@ -761,7 +761,7 @@ class BertEmbeddings(nn.Module):
 
 class BertPooler(nn.Module):
     def __init__(self, config):
-        print("BertPooler init")
+        # print("BertPooler init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.activation = nn.Tanh()
@@ -777,7 +777,7 @@ class BertPooler(nn.Module):
 class LXRTModel(BertPreTrainedModel):
     """LXRT Model."""
     def __init__(self, config):
-        print("LXRTModel init")
+        # print("LXRTModel init")
         super().__init__(config)
         self.embeddings = BertEmbeddings(config)
         self.encoder = LXRTEncoder(config)
@@ -830,13 +830,14 @@ class LXRTModel(BertPreTrainedModel):
 
 
 #################################################################################
+# pre-train时使用的模型
 # BertLMPredictionHead / BertVisualObjHead (BertPredictionHeadTransform)
 # BertPreTrainingHeads (BertLMPredictionHead)
 # LXRTPretraining = LXRTModel + BertPreTrainingHeads + BertVisualObjHead / BertVisualAnswerHead
 #################################################################################
 class BertPredictionHeadTransform(nn.Module):
     def __init__(self, config):
-        print("BertPredictionHeadTransform init")
+        # print("BertPredictionHeadTransform init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         if isinstance(config.hidden_act, str) or (sys.version_info[0] == 2 and isinstance(config.hidden_act, unicode)):
@@ -853,7 +854,7 @@ class BertPredictionHeadTransform(nn.Module):
 
 class BertLMPredictionHead(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
-        print("BertLMPredictionHead init")
+        # print("BertLMPredictionHead init")
         super().__init__()
         self.transform = BertPredictionHeadTransform(config)
 
@@ -872,7 +873,7 @@ class BertLMPredictionHead(nn.Module):
 
 class BertPreTrainingHeads(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
-        print("BertPreTrainingHeads init")
+        # print("BertPreTrainingHeads init")
         super().__init__()
         self.predictions = BertLMPredictionHead(config, bert_model_embedding_weights)
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
@@ -884,7 +885,7 @@ class BertPreTrainingHeads(nn.Module):
 
 class BertVisualObjHead(nn.Module):
     def __init__(self, config, visual_losses):
-        print("BertVisualObjHead init")
+        # print("BertVisualObjHead init")
         super().__init__()
         self.transform = BertPredictionHeadTransform(config)
 
@@ -910,7 +911,7 @@ class BertVisualObjHead(nn.Module):
 
 class BertVisualAnswerHead(nn.Module):
     def __init__(self, config, num_answers):
-        print("BertVisualAnswerHead init")
+        # print("BertVisualAnswerHead init")
         super().__init__()
         hid_dim = config.hidden_size
         self.logit_fc = nn.Sequential(
@@ -932,7 +933,7 @@ class LXRTPretraining(BertPreTrainedModel):
                  visual_losses='',
                  task_qa=True,
                  num_answers=2):
-        print("LXRTPretraining init")
+        # print("LXRTPretraining init")
         super().__init__(config)
         # Configuration
         self.config = config
@@ -1029,6 +1030,7 @@ class LXRTPretraining(BertPreTrainedModel):
 
 
 #################################################################################
+# fine-turn时使用的模型
 # LXRTFeatureExtraction = LXRTModel
 #################################################################################
 class LXRTFeatureExtraction(BertPreTrainedModel):
@@ -1036,7 +1038,7 @@ class LXRTFeatureExtraction(BertPreTrainedModel):
     BERT model for classification.
     """
     def __init__(self, config, mode='lxr'):
-        print("LXRTFeatureExtraction init")
+        # print("LXRTFeatureExtraction init")
         """
 
         :param config:

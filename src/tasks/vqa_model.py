@@ -13,7 +13,7 @@ MAX_VQA_LENGTH = 20
 
 class VQAModel(nn.Module):
     def __init__(self, num_answers):
-        print("VQAModel init")
+        # print("VQAModel init")
         super().__init__()
         
         # Build LXRT encoder

@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 
 from lxrt.tokenization import BertTokenizer
-from lxrt.modeling import LXRTFeatureExtraction as VisualBertForLXRFeature, VISUAL_CONFIG
+from lxrt.modeling import LXRTFeatureExtraction, VISUAL_CONFIG
 
 
 class InputFeatures(object):
@@ -90,7 +90,7 @@ class LXRTEncoder(nn.Module):
         )
 
         # Build LXRT Model
-        self.model = VisualBertForLXRFeature.from_pretrained(
+        self.model = LXRTFeatureExtraction.from_pretrained(
             "bert-base-uncased",
             mode=mode
         )

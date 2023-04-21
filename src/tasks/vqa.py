@@ -58,7 +58,7 @@ class VQA:
             self.model.lxrt_encoder.load(args.load_lxmert)
         if args.load_lxmert_qa is not None:
             load_lxmert_qa(args.load_lxmert_qa, self.model,
-                           label2ans=self.train_tuple.dataset.label2ans)
+                           label2ans=self.train_tuple.dataset.label2ans, logger=logger)
         
         # GPU options
         self.model = self.model.cuda()
