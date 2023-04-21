@@ -81,7 +81,7 @@ class AnswerTable:
         return len(self.anss)
 
 
-def load_lxmert_qa(path, model, label2ans):
+def load_lxmert_qa(path, model, label2ans, logger):
     """
     Load model weights from LXMERT pre-training.
     The answers in the fine-tuned QA task (indicated by label2ans)
@@ -94,7 +94,7 @@ def load_lxmert_qa(path, model, label2ans):
         {0: 'cat', 1: 'dog', ...}
     :return:
     """
-    print("Load QA pre-trained LXMERT from %s " % path)
+    logger.info("Load QA pre-trained LXMERT from %s " % path)
     loaded_state_dict = torch.load("%s_LXRT.pth" % path)
     model_state_dict = model.state_dict()
 
@@ -136,8 +136,7 @@ def load_lxmert_qa(path, model, label2ans):
             new_answer_weight[label] = 0.
             new_answer_bias[label] = 0.
             unload += 1
-    print("Loaded %d answers from LXRTQA pre-training and %d not" % (loaded, unload))
-    print()
+    logger.info("Loaded %d answers from LXRTQA pre-training and %d not" % (loaded, unload))
     answer_state_dict['logit_fc.3.weight'] = new_answer_weight
     answer_state_dict['logit_fc.3.bias'] = new_answer_bias
 
