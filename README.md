@@ -86,16 +86,16 @@ also available on Google Drive and Baidu Drive (see [Alternative Download](#alte
     ```
 
 4. Before fine-tuning on whole VQA 2.0 training set, verifying the script and model on a small training set (512 images) is recommended. 
-The first argument `0` is GPU id. The second argument `vqa_lxr955_tiny` is the name of this experiment.
+The first argument `0` is GPU id. The second argument `vqa_lxr_tiny` is the name of this experiment.
     ```bash
-    bash run/vqa_finetune.bash 0 vqa_lxr420_tiny --tiny
+    bash run/vqa_finetune.bash 0 vqa_lxr_tiny --tiny
     ```
 5. If no bug came out, then the model is ready to be trained on the whole VQA corpus:
     ```bash
-    bash run/vqa_finetune.bash 1 vqa_lxr420
+    bash run/vqa_finetune.bash 1 vqa_lxr
     ```
 It takes around 8 hours (2 hours per epoch * 4 epochs) to converge. 
-The **logs** and **model snapshots** will be saved under folder `logs/vqa/vqa_lxr955`. 
+The **logs** and **model snapshots** will be saved under folder `logs/vqa/vqa_lxr`. 
 The validation result after training will be around **69.7%** to **70.2%**. 
 
 #### Local Validation
@@ -103,7 +103,7 @@ The results on the validation set (our minival set) are printed while training.
 The validation result is also saved to `logs/vqa/[experiment-name]/log.log`.
 If the log file was accidentally deleted, the validation result in training is also reproducible from the model snapshot:
 ```bash
-bash run/vqa_test.bash 0 vqa_lxr955_results --test minival --load logs/vqa/vqa_lxr955/BEST
+bash run/vqa_test.bash 0 vqa_lxr_results --test minival --load logs/vqa/vqa_lxr/BEST
 ```
 #### Submitted to VQA test server
 1. Download our re-distributed json file containing VQA 2.0 test data.
@@ -119,9 +119,9 @@ bash run/vqa_test.bash 0 vqa_lxr955_results --test minival --load logs/vqa/vqa_l
 (i.e., test dev, test standard, test challenge, and test held-out). 
 It takes around 10~15 mins to run test inference (448K instances to run).
     ```bash
-    bash run/vqa_test.bash 0 vqa_lxr955_results --test test --load logs/vqa/vqa_lxr955/BEST
+    bash run/vqa_test.bash 0 vqa_lxr_results --test test --load logs/vqa/vqa_lxr/BEST
     ```
- The test results will be saved in `logs/vqa_lxr955_results/test_predict.json`. 
+ The test results will be saved in `logs/vqa_lxr_results/test_predict.json`. 
 The VQA 2.0 challenge for this year is host on [EvalAI](https://evalai.cloudcv.org/) at [https://evalai.cloudcv.org/web/challenges/challenge-page/163/overview](https://evalai.cloudcv.org/web/challenges/challenge-page/163/overview)
 It still allows submission after the challenge ended.
 Please check the official website of [VQA Challenge](https://visualqa.org/challenge.html) for detailed information and 
@@ -162,25 +162,25 @@ also available on Google Drive and Baidu Drive (see [Alternative Download](#alte
     ```
 
 4. Before fine-tuning on whole GQA training+validation set, verifying the script and model on a small training set (512 images) is recommended. 
-The first argument `0` is GPU id. The second argument `gqa_lxr955_tiny` is the name of this experiment.
+The first argument `0` is GPU id. The second argument `gqa_lxr_tiny` is the name of this experiment.
     ```bash
-    bash run/gqa_finetune.bash 0 gqa_lxr955_tiny --tiny
+    bash run/gqa_finetune.bash 0 gqa_lxr_tiny --tiny
     ```
 
 5. If no bug came out, then the model is ready to be trained on the whole GQA corpus (train + validation), and validate on 
 the testdev set:
     ```bash
-    bash run/gqa_finetune.bash 0 gqa_lxr955
+    bash run/gqa_finetune.bash 0 gqa_lxr
     ```
 It takes around 16 hours (4 hours per epoch * 4 epochs) to converge. 
-The **logs** and **model snapshots** will be saved under folder `logs/gqa/gqa_lxr955`. 
+The **logs** and **model snapshots** will be saved under folder `logs/gqa/gqa_lxr`. 
 The validation result after training will be around **59.8%** to **60.1%**. 
 
 #### Local Validation
-The results on testdev is printed out while training and saved in `logs/gqa/gqa_lxr955/log.log`.
+The results on testdev is printed out while training and saved in `logs/gqa/gqa_lxr/log.log`.
 It could be also re-calculated with command:
 ```bash
-bash run/gqa_test.bash 0 gqa_lxr955_results --load logs/gqa/gqa_lxr955/BEST --test testdev --batchSize 1024
+bash run/gqa_test.bash 0 gqa_lxr_results --load logs/gqa/gqa_lxr/BEST --test testdev --batchSize 1024
 ```
 
 > Note: Our local testdev result is usually 0.1% to 0.5% lower than the 
@@ -202,10 +202,10 @@ want to have the exact number without submitting.
 we need to run inference over all test splits.
 It takes around 30~60 mins to run test inference (4.2M instances to run).
     ```bash
-    bash run/gqa_test.bash 0 gqa_lxr955_results --load logs/gqa/gqa_lxr955/BEST --test submit --batchSize 1024
+    bash run/gqa_test.bash 0 gqa_lxr_results --load logs/gqa/gqa_lxr/BEST --test submit --batchSize 1024
     ```
 
-3. After running test script, a json file `submit_predict.json` under `logs/gqa/gqa_lxr955_results` will contain 
+3. After running test script, a json file `submit_predict.json` under `logs/gqa/gqa_lxr_results` will contain 
 all the prediction results and is ready to be submitted.
 The GQA challenge 2019 is hosted by [EvalAI](https://evalai.cloudcv.org/) at [https://evalai.cloudcv.org/web/challenges/challenge-page/225/overview](https://evalai.cloudcv.org/web/challenges/challenge-page/225/overview).
 After registering the account, uploading the `submit_predict.json` and waiting for the results are the only thing remained.
@@ -246,11 +246,11 @@ The images could either be downloaded with the urls or by signing an agreement f
     ```
 
 4. Before fine-tuning on whole NLVR2 training set, verifying the script and model on a small training set (512 images) is recommended. 
-The first argument `0` is GPU id. The second argument `nlvr2_lxr955_tiny` is the name of this experiment.
+The first argument `0` is GPU id. The second argument `nlvr2_lxr_tiny` is the name of this experiment.
 Do not worry if the result is low (50~55) on this tiny split, 
 the whole training data would bring the performance back.
     ```bash
-    bash run/nlvr2_finetune.bash 0 nlvr2_lxr955_tiny --tiny
+    bash run/nlvr2_finetune.bash 0 nlvr2_lxr_tiny --tiny
     ```
 
 5. If no bugs are popping up from the previous step, 
@@ -258,7 +258,7 @@ it means that the code, the data, and image features are ready.
 Please use this command to train on the full training set. 
 The result on NLVR2 validation (dev) set would be around **74.0** to **74.5**.
     ```bash
-    bash run/nlvr2_finetune.bash 0 nlvr2_lxr955
+    bash run/nlvr2_finetune.bash 0 nlvr2_lxr
     ```
 
 #### Inference on Public Test Split
@@ -270,16 +270,16 @@ The result on NLVR2 validation (dev) set would be around **74.0** to **74.5**.
 
 2. Test on the public test set (corresponding to 'test-P' on [NLVR2 leaderboard](http://lil.nlp.cornell.edu/nlvr/)) with:
     ```bash
-    bash run/nlvr2_test.bash 0 nlvr2_lxr955_results --load logs/nlvr2/nlvr2_lxr955/BEST --test test --batchSize 1024
+    bash run/nlvr2_test.bash 0 nlvr2_lxr_results --load logs/nlvr2/nlvr2_lxr/BEST --test test --batchSize 1024
     ```
 
 3. The test accuracy would be shown on the screen after around 5~10 minutes.
 It also saves the predictions in the file `test_predict.csv` 
-under `logs/nlvr2_lxr955_reuslts`, which is compatible to NLVR2 [official evaluation script](https://github.com/lil-lab/nlvr/tree/master/nlvr2/eval).
+under `logs/nlvr2_lxr_reuslts`, which is compatible to NLVR2 [official evaluation script](https://github.com/lil-lab/nlvr/tree/master/nlvr2/eval).
 The official eval script also calculates consistency ('Cons') besides the accuracy.
 We could use this official script to verify the results by running:
     ```bash
-    python data/nlvr2/nlvr/nlvr2/eval/metrics.py logs/nlvr2/nlvr2_lxr955_results/test_predict.csv data/nlvr2/nlvr/nlvr2/data/test1.json
+    python data/nlvr2/nlvr/nlvr2/eval/metrics.py logs/nlvr2/nlvr2_lxr_results/test_predict.csv data/nlvr2/nlvr/nlvr2/data/test1.json
     ```
 
 The accuracy of public test ('test-P') set should be almost same to the validation set ('dev'),
@@ -485,7 +485,7 @@ multiple vision-and-language datasets would share common images.
 (Language, Cross-Modality, and object-Relationship Transformers) to refer to our our models.
 - To be consistent with the name `lxrt` (Language, Cross-Modality, and object-Relationship Transformers), 
 we use `lxrXXX` to denote the number of layers.
-E.g., `lxr955` (used in current pre-trained model) indicates 
+E.g., `lxr` (used in current pre-trained model) indicates 
 a model with 9 Language layers, 5 cross-modality layers, and 5 object-Relationship layers. 
 If we consider a single-modality layer as a half of cross-modality layer, 
 the total number of layers is `(9 + 5) / 2 + 5 = 12`, which is the same as `BERT_BASE`.
