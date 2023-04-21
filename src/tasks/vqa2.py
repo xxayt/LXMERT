@@ -11,7 +11,7 @@ import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from timm.utils import AverageMeter
+from timm.utils import accuracy, AverageMeter
 # 
 from param import args
 from utils import *
@@ -111,12 +111,11 @@ class VQA:
                 nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
                 self.optimizer.step()  # update parameters based on current gradients
 
-                score, label = output.max(1)
-                for qid, l in zip(ques_id, label.cpu().numpy()):
+                score, acc1 = output.max(1)
+                for qid, l in zip(ques_id, acc1.cpu().numpy()):
                     ans = Dataset.label2ans[l]
                     quesid2ans[qid.item()] = ans
 
-                
 
             log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, evaluator.evaluate(quesid2ans) * 100.)
 
@@ -160,8 +159,8 @@ class VQA:
             with torch.no_grad():
                 feats, boxes = feats.cuda(), boxes.cuda()
                 output = self.model(feats, boxes, sent)
-                score, label = output.max(1)
-                for qid, l in zip(ques_id, label.cpu().numpy()):
+                score, acc1 = output.max(1)
+                for qid, l in zip(ques_id, acc1.cpu().numpy()):
                     ans = Dataset.label2ans[l]
                     quesid2ans[qid.item()] = ans
         if dump is not None:
@@ -178,8 +177,8 @@ class VQA:
         Dataset, loader, evaluator = data_tuple
         quesid2ans = {}
         for i, (ques_id, feats, boxes, sent, target) in enumerate(loader):
-            _, label = target.max(1)
-            for qid, l in zip(ques_id, label.cpu().numpy()):
+            _, acc1 = target.max(1)
+            for qid, l in zip(ques_id, acc1.cpu().numpy()):
                 ans = Dataset.label2ans[l]
                 quesid2ans[qid.item()] = ans
         return evaluator.evaluate(quesid2ans)
@@ -326,10 +325,10 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         output = model(feats, boxes, sent)
         assert output.dim() == target.dim() == 2
         loss = loss_function(output, target)
-        # loss = loss * output.size(1)
+        loss = loss * output.size(1)
         print("output.size: ", output.size())
         print("output.size(1):", output.size(1))  # 3129
-        acc1, label = output.max(1)
+        _, acc1 = output.max(1)  # 每行最大值
 
         loss.backward()  # compute gradients based on current loss
         # 为解决梯度爆炸问题，设置梯度截断(设置梯度大小的上限)
@@ -337,7 +336,7 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         optimizer.step()  # update parameters based on current gradients
         optimizer.zero_grad()  # clear gradients for next train
         
-        for qid, l in zip(ques_id, label.cpu().numpy()):
+        for qid, l in zip(ques_id, acc1.cpu().numpy()):
             ans = Dataset.label2ans[l]
             quesid2ans[qid.item()] = ans
 
@@ -346,6 +345,10 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         end = time.time()
         print("loss.item():", loss.item())
         print("output.size(0):", output.size(0))  # 32
+        print("acc1.type", type(acc1))
+        print("acc1.size", acc1.size())
+        print(acc1)
+
         print("acc1.item():", acc1.item())
         loss_meter.update(loss.item(), output.size(0))  # output.size(0)
         acc1_meter.update(acc1.item(), output.size(0))
@@ -361,7 +364,7 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
                 f'eta {datetime.timedelta(seconds=int(etas))}\t'
                 f'time {batch_time.val:.4f} ({batch_time.avg:.4f})\t'
                 f'loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
-                f'Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})')
+                f'Score {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})')
     epoch_time = time.time() - start
     logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
 
@@ -384,9 +387,9 @@ def validate(val_loader, model, loss_function, epoch, logger, args):
         assert output.dim() == target.dim() == 2
         loss = loss_function(output, target)
         loss = loss * output.size(1)
-        acc1, label = output.max(1)
+        _, acc1 = output.max(1)
 
-        for qid, l in zip(ques_id, label.cpu().numpy()):
+        for qid, l in zip(ques_id, acc1.cpu().numpy()):
             ans = val_loader.dataset.label2ans[l]
             quesid2ans[qid.item()] = ans
 
