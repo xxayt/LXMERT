@@ -113,24 +113,14 @@ def create_logging(log_file=None, log_level=logging.INFO, file_mode='w'):
 
     return logger
 
-def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger):
-    save_state = {'model': model.state_dict(),
-                  'optimizer': optimizer.state_dict(),
-                  'lr_scheduler': lr_scheduler.state_dict(),
-                  'max_accuracy': max_accuracy,
-                  'epoch': epoch,
-                  'config': config}
-    if config.AMP_OPT_LEVEL != "O0":
-        save_state['amp'] = amp.state_dict()
-    '''
-    # 保存当前epoch参数
-    save_path = os.path.join(config.OUTPUT, f'ckpt_epoch_{epoch}.pth')
-    logger.info(f"{save_path} saving......")
-    torch.save(save_state, save_path)
-    logger.info(f"{save_path} saved !!!")
-    '''
-    # 保存最新epoch参数
-    lastest_save_path = os.path.join(config.OUTPUT, f'latest.pth')
-    # logger.info(f"{lastest_save_path} saving......")
+def save_checkpoint(epoch, model, optimizer, max_accuracy, args, logger, save_name='Latest'):
+    save_state = {
+        'epoch': epoch,
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'max_accuracy': max_accuracy
+    }
+    # 保存最新(好)epoch参数
+    lastest_save_path = os.path.join(args.path_log, '%s-%s.pth' % (args.name, save_name))
     torch.save(save_state, lastest_save_path)
     logger.info(f"{lastest_save_path} saved !!!")

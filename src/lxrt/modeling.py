@@ -181,8 +181,9 @@ class BertConfig(object):
                  attention_probs_dropout_prob=0.1,
                  max_position_embeddings=512,
                  type_vocab_size=2,
-                 initializer_range=0.02):
-        # print("BertConfig init")
+                 initializer_range=0.02,
+                 type = 'base'):
+        print("BertConfig init")
         """Constructs BertConfig.
 
         Args:
@@ -225,6 +226,7 @@ class BertConfig(object):
             self.max_position_embeddings = max_position_embeddings
             self.type_vocab_size = type_vocab_size
             self.initializer_range = initializer_range
+            self.type = type
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
                              "or the path to a pretrained model config file (str)")
@@ -260,8 +262,150 @@ class BertConfig(object):
 BertLayerNorm = torch.nn.LayerNorm
 
 class BertAttention(nn.Module):
-    def __init__(self, config, ctx_dim=None):
-        # print("BertAttention init")
+    def __init__(self, config, current_num_layers, ctx_dim=None):
+        print("BertAttention init")
+        super().__init__()
+        if config.hidden_size % config.num_attention_heads != 0:
+            raise ValueError(
+                "The hidden size (%d) is not a multiple of the number of attention "
+                "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+        self.num_attention_heads = config.num_attention_heads
+        self.attention_head_size = int(config.hidden_size / config.num_attention_heads) # 768/12=64
+        # all_head_size = hidden_size
+        self.all_head_size = self.num_attention_heads * self.attention_head_size # 12*64=768
+
+        # visual_dim = 2048
+        if ctx_dim is None:
+            ctx_dim =config.hidden_size
+        self.query = nn.Linear(config.hidden_size, self.all_head_size)
+        self.key = nn.Linear(ctx_dim, self.all_head_size)
+        self.value = nn.Linear(ctx_dim, self.all_head_size)
+
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+    # 拆分多头
+    def transpose_for_scores(self, x):
+        # [bs, seq_length, all_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)  # 相当于reshape
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        x = x.transpose(1, 2) # x.permute(0, 2, 1, 3)
+        return x
+
+    def forward(self, hidden_states, context, attention_mask=None):
+        # hidden_states -> query; context -> key, value
+        # [bs, seq_length, v_hidden_size] -> [bs, seq_length, all_head_size]
+        mixed_query_layer = self.query(hidden_states)
+        mixed_key_layer = self.key(context)
+        mixed_value_layer = self.value(context)
+
+        # [bs, seq_length, all_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+        key_layer = self.transpose_for_scores(mixed_key_layer)
+        value_layer = self.transpose_for_scores(mixed_value_layer)
+
+        # Take the dot product between "query" and "key" to get the raw attention scores.
+        # transpose: -> [bs, num_attention_heads, attention_head_size, seq_length]
+        # @: multiply -> [bs, num_attention_heads, seq_length, seq_length]
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+
+        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        if attention_mask is not None:
+            attention_scores = attention_scores + attention_mask
+        # Normalize the attention scores to probabilities.
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        # This is actually dropping out entire tokens to attend to, which might
+        # seem a bit unusual, but is taken from the original Transformer paper.
+        attention_probs = self.dropout(attention_probs)
+
+        # @: multiply -> [bs, num_attention_heads, seq_length, attention_head_size]
+        context_layer = torch.matmul(attention_probs, value_layer)
+
+        # 调换维度,准备合并多头
+        # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        context_layer = context_layer.transpose(1, 2).contiguous()
+        # context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # 合并多头中的信息
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, seq_length, all_head_size]
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)  # 相当于reshape 
+        return context_layer
+
+class BertExchangeAttention(nn.Module):
+    def __init__(self, config, current_num_layers, ctx_dim=None):
+        print("BertExchangeAttention init")
+        super().__init__()
+        if config.hidden_size % config.num_attention_heads != 0:
+            raise ValueError(
+                "The hidden size (%d) is not a multiple of the number of attention "
+                "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+        self.num_attention_heads = config.num_attention_heads
+        self.attention_head_size = int(config.hidden_size / config.num_attention_heads) # 768/12=64
+        # all_head_size = hidden_size
+        self.all_head_size = self.num_attention_heads * self.attention_head_size # 12*64=768
+
+        # visual_dim = 2048
+        if ctx_dim is None:
+            ctx_dim =config.hidden_size
+        self.query = nn.Linear(config.hidden_size, self.all_head_size)
+        self.key = nn.Linear(ctx_dim, self.all_head_size)
+        self.value = nn.Linear(ctx_dim, self.all_head_size)
+
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+    # 拆分多头
+    def transpose_for_scores(self, x):
+        # [bs, seq_length, all_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)  # 相当于reshape
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        x = x.transpose(1, 2) # x.permute(0, 2, 1, 3)
+        return x
+
+    def forward(self, hidden_states, context, attention_mask=None):
+        # hidden_states -> query; context -> key, value
+        # [bs, seq_length, v_hidden_size] -> [bs, seq_length, all_head_size]
+        mixed_query_layer = self.query(hidden_states)
+        mixed_key_layer = self.key(context)
+        mixed_value_layer = self.value(context)
+
+        # [bs, seq_length, all_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+        key_layer = self.transpose_for_scores(mixed_key_layer)
+        value_layer = self.transpose_for_scores(mixed_value_layer)
+
+        # Take the dot product between "query" and "key" to get the raw attention scores.
+        # transpose: -> [bs, num_attention_heads, attention_head_size, seq_length]
+        # @: multiply -> [bs, num_attention_heads, seq_length, seq_length]
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+
+        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        if attention_mask is not None:
+            attention_scores = attention_scores + attention_mask
+        # Normalize the attention scores to probabilities.
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        # This is actually dropping out entire tokens to attend to, which might
+        # seem a bit unusual, but is taken from the original Transformer paper.
+        attention_probs = self.dropout(attention_probs)
+
+        # @: multiply -> [bs, num_attention_heads, seq_length, attention_head_size]
+        context_layer = torch.matmul(attention_probs, value_layer)
+
+        # 调换维度,准备合并多头
+        # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        context_layer = context_layer.transpose(1, 2).contiguous()
+        # context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # 合并多头中的信息
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, seq_length, all_head_size]
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)  # 相当于reshape 
+        return context_layer
+
+class BertPoolingAttention(nn.Module):
+    def __init__(self, config, current_num_layers, ctx_dim=None):
+        print("BertAttention init")
         super().__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
@@ -332,7 +476,7 @@ class BertAttention(nn.Module):
 
 class BertAttOutput(nn.Module):
     def __init__(self, config):
-        # print("BertAttOutput init")
+        print("BertAttOutput init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
@@ -349,10 +493,10 @@ class BertAttOutput(nn.Module):
 # BERTLayer = BertSelfattLayer + BertIntermediate + BertOutput
 #################################################################################
 class BertSelfattLayer(nn.Module):
-    def __init__(self, config):
-        # print("BertSelfattLayer init")
+    def __init__(self, config, current_num_layers):
+        print("BertSelfattLayer init")
         super().__init__()
-        self.self = BertAttention(config)
+        self.self = BertAttention(config, current_num_layers)
         self.output = BertAttOutput(config)
 
     def forward(self, input_tensor, attention_mask):
@@ -363,7 +507,7 @@ class BertSelfattLayer(nn.Module):
 
 class BertIntermediate(nn.Module):
     def __init__(self, config):
-        # print("BertIntermediate init")
+        print("BertIntermediate init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
         if isinstance(config.hidden_act, str) or (sys.version_info[0] == 2 and isinstance(config.hidden_act, unicode)):
@@ -378,7 +522,7 @@ class BertIntermediate(nn.Module):
 
 class BertOutput(nn.Module):
     def __init__(self, config):
-        # print("BertOutput init")
+        print("BertOutput init")
         super().__init__()
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
@@ -391,10 +535,10 @@ class BertOutput(nn.Module):
         return hidden_states
 
 class BertLayer(nn.Module):
-    def __init__(self, config):
-        # print("BertLayer init")
+    def __init__(self, config, current_num_layers):
+        print("BertLayer init")
         super().__init__()
-        self.attention = BertSelfattLayer(config)
+        self.attention = BertSelfattLayer(config, current_num_layers)
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
 
@@ -414,10 +558,17 @@ class BertLayer(nn.Module):
 # LXRTXLayer = BertCrossattLayer + BertSelfattLayer + BertIntermediate + BertOutput
 #################################################################################
 class BertCrossattLayer(nn.Module):
-    def __init__(self, config):
-        # print("BertCrossattLayer init")
+    def __init__(self, config, current_num_layers):
+        print("BertCrossattLayer init")
         super().__init__()
-        self.att = BertAttention(config)
+        if config.type == 'base':
+            self.att = BertAttention(config)
+        elif config.type == 'exchange':
+            self.att = BertExchangeAttention(config)
+        elif config.type == 'pooling':
+            self.att = BertPoolingAttention(config)
+        else:
+            raise ValueError("Invalid type of cross attention layer: %s" % config.type)
         self.output = BertAttOutput(config)
 
     def forward(self, input_tensor, ctx_tensor, ctx_att_mask=None):
@@ -426,11 +577,11 @@ class BertCrossattLayer(nn.Module):
         return attention_output
 
 class LXRTXLayer(nn.Module):
-    def __init__(self, config):
-        # print("LXRTXLayer init")
+    def __init__(self, config, current_num_layers):
+        print("LXRTXLayer init")
         super().__init__()
         # The cross-attention Layer
-        self.visual_attention = BertCrossattLayer(config)
+        self.visual_attention = BertCrossattLayer(config, current_num_layers)
 
         # Self-attention Layers
         self.lang_self_att = BertSelfattLayer(config)
@@ -483,7 +634,7 @@ class LXRTXLayer(nn.Module):
 #################################################################################
 class VisualFeatEncoder(nn.Module):
     def __init__(self, config):
-        # print("VisualFeatEncoder init")
+        print("VisualFeatEncoder init")
         super().__init__()
         feat_dim = VISUAL_CONFIG.visual_feat_dim
         pos_dim = VISUAL_CONFIG.visual_pos_dim
@@ -512,7 +663,7 @@ class VisualFeatEncoder(nn.Module):
 
 class LXRTEncoder(nn.Module):
     def __init__(self, config):
-        # print("LXRTEncoder init")
+        print("LXRTEncoder init")
         super().__init__()
 
         # Obj-level image embedding layer
@@ -528,13 +679,14 @@ class LXRTEncoder(nn.Module):
         # Layers
         # Using self.layer instead of self.l_layer to support loading BERT weights.
         self.layer = nn.ModuleList(
-            [BertLayer(config) for _ in range(self.num_l_layers)]
-        )
-        self.x_layers = nn.ModuleList(
-            [LXRTXLayer(config) for _ in range(self.num_x_layers)]
+            [BertLayer(config, current_num_layers=index) for index in range(self.num_l_layers)]
         )
         self.r_layers = nn.ModuleList(
-            [BertLayer(config) for _ in range(self.num_r_layers)]
+            [BertLayer(config, current_num_layers=index) for index in range(self.num_r_layers)]
+        )
+        self.x_layers = nn.ModuleList(
+            
+            [LXRTXLayer(config, current_num_layers=index) for index in range(self.num_x_layers)]
         )
 
     def forward(self, lang_feats, lang_attention_mask,
@@ -554,8 +706,7 @@ class LXRTEncoder(nn.Module):
 
         # Run cross-modality layers
         for layer_module in self.x_layers:
-            lang_feats, visn_feats = layer_module(lang_feats, lang_attention_mask,
-                                                  visn_feats, visn_attention_mask)
+            lang_feats, visn_feats = layer_module(lang_feats, lang_attention_mask, visn_feats, visn_attention_mask)
 
         return lang_feats, visn_feats
 
@@ -566,7 +717,7 @@ class BertPreTrainedModel(nn.Module):
         a simple interface for dowloading and loading pretrained models.
     """
     def __init__(self, config, *inputs, **kwargs):
-        # print("BertPreTrainedModel init")
+        print("BertPreTrainedModel init")
         super().__init__()
         if not isinstance(config, BertConfig):
             raise ValueError(
@@ -663,6 +814,7 @@ class BertPreTrainedModel(nn.Module):
             serialization_dir = tempdir
         # Load config
         config_file = os.path.join(serialization_dir, CONFIG_NAME)
+        print("config_file: ", config_file)
         config = BertConfig.from_json_file(config_file)
         logger.info("Model config {}".format(config))
         # Instantiate model.
@@ -732,7 +884,7 @@ class BertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
     """
     def __init__(self, config):
-        # print("BertEmbeddings init")
+        print("BertEmbeddings init")
         super().__init__()
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size, padding_idx=0)
@@ -761,7 +913,7 @@ class BertEmbeddings(nn.Module):
 
 class BertPooler(nn.Module):
     def __init__(self, config):
-        # print("BertPooler init")
+        print("BertPooler init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.activation = nn.Tanh()
@@ -777,7 +929,7 @@ class BertPooler(nn.Module):
 class LXRTModel(BertPreTrainedModel):
     """LXRT Model."""
     def __init__(self, config):
-        # print("LXRTModel init")
+        print("LXRTModel init")
         super().__init__(config)
         self.embeddings = BertEmbeddings(config)
         self.encoder = LXRTEncoder(config)
@@ -837,7 +989,7 @@ class LXRTModel(BertPreTrainedModel):
 #################################################################################
 class BertPredictionHeadTransform(nn.Module):
     def __init__(self, config):
-        # print("BertPredictionHeadTransform init")
+        print("BertPredictionHeadTransform init")
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         if isinstance(config.hidden_act, str) or (sys.version_info[0] == 2 and isinstance(config.hidden_act, unicode)):
@@ -854,7 +1006,7 @@ class BertPredictionHeadTransform(nn.Module):
 
 class BertLMPredictionHead(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
-        # print("BertLMPredictionHead init")
+        print("BertLMPredictionHead init")
         super().__init__()
         self.transform = BertPredictionHeadTransform(config)
 
@@ -873,7 +1025,7 @@ class BertLMPredictionHead(nn.Module):
 
 class BertPreTrainingHeads(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
-        # print("BertPreTrainingHeads init")
+        print("BertPreTrainingHeads init")
         super().__init__()
         self.predictions = BertLMPredictionHead(config, bert_model_embedding_weights)
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
@@ -885,7 +1037,7 @@ class BertPreTrainingHeads(nn.Module):
 
 class BertVisualObjHead(nn.Module):
     def __init__(self, config, visual_losses):
-        # print("BertVisualObjHead init")
+        print("BertVisualObjHead init")
         super().__init__()
         self.transform = BertPredictionHeadTransform(config)
 
@@ -911,7 +1063,7 @@ class BertVisualObjHead(nn.Module):
 
 class BertVisualAnswerHead(nn.Module):
     def __init__(self, config, num_answers):
-        # print("BertVisualAnswerHead init")
+        print("BertVisualAnswerHead init")
         super().__init__()
         hid_dim = config.hidden_size
         self.logit_fc = nn.Sequential(
@@ -933,7 +1085,7 @@ class LXRTPretraining(BertPreTrainedModel):
                  visual_losses='',
                  task_qa=True,
                  num_answers=2):
-        # print("LXRTPretraining init")
+        print("LXRTPretraining init")
         super().__init__(config)
         # Configuration
         self.config = config
@@ -1038,9 +1190,8 @@ class LXRTFeatureExtraction(BertPreTrainedModel):
     BERT model for classification.
     """
     def __init__(self, config, mode='lxr'):
-        # print("LXRTFeatureExtraction init")
+        print("LXRTFeatureExtraction init")
         """
-
         :param config:
         :param mode:  Number of visual layers
         """

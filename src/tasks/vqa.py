@@ -109,12 +109,12 @@ class VQA:
                 nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
                 self.optimizer.step()
 
-                score, label = output.max(1)
-                for qid, l in zip(ques_id, label.cpu().numpy()):
-                    ans = dset.label2ans[l]
+                score, label = output.max(1)  # dim=1按行取最大
+                for qid, ans_index in zip(ques_id, label.cpu().numpy()):
+                    # 将预测答案index转换为ans
+                    ans = dset.label2ans[ans_index]
+                    # 构建quesid2ans字典: question_id作为key，预测答案作为value
                     quesid2ans[qid.item()] = ans
-
-                
 
             log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, evaluator.evaluate(quesid2ans) * 100.)
 
@@ -159,8 +159,8 @@ class VQA:
                 feats, boxes = feats.cuda(), boxes.cuda()
                 output = self.model(feats, boxes, sent)
                 score, label = output.max(1)
-                for qid, l in zip(ques_id, label.cpu().numpy()):
-                    ans = dset.label2ans[l]
+                for qid, ans_index in zip(ques_id, label.cpu().numpy()):
+                    ans = dset.label2ans[ans_index]
                     quesid2ans[qid.item()] = ans
         if dump is not None:
             evaluator.dump_result(quesid2ans, dump)
@@ -177,8 +177,8 @@ class VQA:
         quesid2ans = {}
         for i, (ques_id, feats, boxes, sent, target) in enumerate(loader):
             _, label = target.max(1)
-            for qid, l in zip(ques_id, label.cpu().numpy()):
-                ans = dset.label2ans[l]
+            for qid, ans_index in zip(ques_id, label.cpu().numpy()):
+                ans = dset.label2ans[ans_index]
                 quesid2ans[qid.item()] = ans
         return evaluator.evaluate(quesid2ans)
 
