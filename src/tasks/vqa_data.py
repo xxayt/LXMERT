@@ -4,13 +4,17 @@
 import json
 import os
 import pickle
+import collections
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from torch.utils.data.dataloader import DataLoader
 
 from param import args
 from utils import load_obj_tsv
+# 创建具有命名字段的 tuple 子类的 factory 函数 (具名元组)
+DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
 
 # Load part of the dataset for fast checking.
 # Notice that here is the number of images instead of the number of data,
@@ -29,6 +33,19 @@ SPLIT2NAME = {
     'test': 'test2015',
 }
 
+def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False, logger=None) -> DataTuple:
+    Dataset = VQADataset(splits, logger=logger)
+    tset = VQATorchDataset(Dataset, logger=logger)
+    evaluator = VQAEvaluator(Dataset)
+    data_loader = DataLoader(
+        tset, batch_size=bs,
+        shuffle=shuffle, num_workers=args.num_workers,
+        drop_last=drop_last, pin_memory=True
+    )
+    return DataTuple(dataset=Dataset, loader=data_loader, evaluator=evaluator)
+
+
+
 """
 A VQA data example in json file:
 {
@@ -43,15 +60,16 @@ A VQA data example in json file:
 }
 """
 class VQADataset:
-    def __init__(self, splits: str):
+    def __init__(self, splits: str, logger=None):
         self.name = splits
         self.splits = splits.split(',')
+        self.logger = logger
 
         # Loading datasets
         self.data = []
         for split in self.splits:
             self.data.extend(json.load(open("data/vqa/%s.json" % split)))
-        print("Load %d data from split(s) %s." % (len(self.data), self.name))
+        self.logger.info("Load %d data from split(s) %s." % (len(self.data), self.name))
 
         # Convert list to dict (for evaluation)
         self.id2datum = {
@@ -79,9 +97,10 @@ FIELDNAMES = ["img_id", "img_h", "img_w", "objects_id", "objects_conf",
 FIELDNAMES would be keys in the dict returned by load_obj_tsv.
 """
 class VQATorchDataset(Dataset):
-    def __init__(self, dataset: VQADataset):
+    def __init__(self, dataset: VQADataset, logger=None):
         super().__init__()
         self.raw_dataset = dataset
+        self.logger = logger
 
         if args.tiny:
             topk = TINY_IMG_NUM
@@ -98,7 +117,8 @@ class VQATorchDataset(Dataset):
             load_topk = 5000 if (split == 'minival' and topk is None) else topk
             img_data.extend(load_obj_tsv(
                 os.path.join(MSCOCO_IMGFEAT_ROOT, '%s_obj36.tsv' % (SPLIT2NAME[split])),
-                topk=load_topk))
+                topk=load_topk,
+                logger=self.logger))
 
         # Convert img list to dict
         self.imgid2img = {}
@@ -110,8 +130,7 @@ class VQATorchDataset(Dataset):
         for datum in self.raw_dataset.data:
             if datum['img_id'] in self.imgid2img:
                 self.data.append(datum)
-        print("Use %d data in torch dataset" % (len(self.data)))
-        print()
+        self.logger.info("Use %d data in torch dataset" % (len(self.data)))
 
     def __len__(self):
         return len(self.data)

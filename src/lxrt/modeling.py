@@ -182,7 +182,7 @@ class BertConfig(object):
                  max_position_embeddings=512,
                  type_vocab_size=2,
                  initializer_range=0.02,
-                 type = 'base'):
+                 type = "base"):
         print("BertConfig init")
         """Constructs BertConfig.
 
@@ -215,6 +215,7 @@ class BertConfig(object):
             for key, value in json_config.items():
                 self.__dict__[key] = value
         elif isinstance(vocab_size_or_config_json_file, int):
+            print("xxx")
             self.vocab_size = vocab_size_or_config_json_file
             self.hidden_size = hidden_size
             self.num_hidden_layers = num_hidden_layers
@@ -340,6 +341,7 @@ class BertExchangeAttention(nn.Module):
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+        self.current_num_layers = current_num_layers
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads) # 768/12=64
         # all_head_size = hidden_size
@@ -375,10 +377,14 @@ class BertExchangeAttention(nn.Module):
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        # transpose: -> [bs, num_attention_heads, attention_head_size, seq_length]
-        # @: multiply -> [bs, num_attention_heads, seq_length, seq_length]
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        # Initialize a tensor to store the new attention scores
+        attention_scores = torch.zeros_like(query_layer @ key_layer.transpose(-1, -2))
+        # Combine the query and key layers follow Exchange-Attention
+        for x in range(self.num_attention_heads):
+            # transpose: -> [bs, attention_head_size, seq_length]
+            # @: multiply -> [bs, seq_length, seq_length]
+            # attention_scores[:, x, :, :] = torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + 0) % self.num_attention_heads, :, :].transpose(-1, -2))
+            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + self.current_num_layers) % self.num_attention_heads, :, :].transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
@@ -390,8 +396,13 @@ class BertExchangeAttention(nn.Module):
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
 
-        # @: multiply -> [bs, num_attention_heads, seq_length, attention_head_size]
-        context_layer = torch.matmul(attention_probs, value_layer)
+        # Initialize a tensor to store the new context layer
+        context_layer = torch.zeros_like(attention_probs @ value_layer)
+        # Combine the attention probabilities and value layers follow Exchange-Attention
+        for x in range(self.num_attention_heads):
+            # @: multiply -> [bs, seq_length, attention_head_size]
+            # context_layer[:, x, :, :] = torch.matmul(attention_probs[:, x, :, :], value_layer[:, (x + 0) % self.num_attention_heads, :, :])
+            context_layer[:, x, :, :] += torch.matmul(attention_probs[:, x, :, :], value_layer[:, (x + self.current_num_layers) % self.num_attention_heads, :, :])
 
         # 调换维度,准备合并多头
         # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
@@ -400,17 +411,18 @@ class BertExchangeAttention(nn.Module):
         # 合并多头中的信息
         # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, seq_length, all_head_size]
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)  # 相当于reshape 
+        context_layer = context_layer.view(*new_context_layer_shape)  # 相当于reshape
         return context_layer
 
-class BertPoolingAttention(nn.Module):
+class BertMeanPoolingAttention(nn.Module):
     def __init__(self, config, current_num_layers, ctx_dim=None):
-        print("BertAttention init")
+        print("BertMeanPoolingAttention init")
         super().__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+        self.current_num_layers = current_num_layers
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads) # 768/12=64
         # all_head_size = hidden_size
@@ -446,11 +458,21 @@ class BertPoolingAttention(nn.Module):
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        # transpose: -> [bs, num_attention_heads, attention_head_size, seq_length]
-        # @: multiply -> [bs, num_attention_heads, seq_length, seq_length]
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        # Initialize a tensor to store the new attention scores
+        attention_scores = torch.zeros_like(query_layer @ key_layer.transpose(-1, -2))
+        # Combine the query and key layers follow MeanPooling-Attention
+        key_layer_repeat = key_layer.repeat(1, 3, 1, 1) # [bs, num_attention_heads*3, seq_length, attention_head_size]
+        for x in range(self.num_attention_heads):
+            x_next = x + self.num_attention_heads
+            start_idx = x_next - (self.current_num_layers // 2)
+            end_idx = x_next + (self.current_num_layers + 1) // 2
+            # [bs, end_idx-start_idx+1, seq_length, attention_head_size]
+            key_slice = key_layer_repeat[:, start_idx:end_idx+1, :, :]
+            # mean: -> [bs, seq_length, attention_head_size] ([64, 36, 64])
+            key_slice_mean = torch.mean(key_slice, axis=1, keepdim=False)
+            # transpose: -> [bs, attention_head_size, seq_length]
+            # @: multiply -> [bs, seq_length, seq_length]
+            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_slice_mean.transpose(-1, -2))
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         if attention_mask is not None:
@@ -461,8 +483,20 @@ class BertPoolingAttention(nn.Module):
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
 
-        # @: multiply -> [bs, num_attention_heads, seq_length, attention_head_size]
-        context_layer = torch.matmul(attention_probs, value_layer)
+        # Initialize a tensor to store the new attention scores
+        context_layer = torch.zeros_like(attention_probs @ value_layer)
+        # Combine the query and key layers follow MeanPooling-Attention
+        value_layer_repeat = value_layer.repeat(1, 3, 1, 1) # [bs, num_attention_heads*3, seq_length, attention_head_size]
+        for x in range(self.num_attention_heads):
+            x_next = x + self.num_attention_heads
+            start_idx = x_next - (self.current_num_layers // 2)
+            end_idx = x_next + (self.current_num_layers + 1) // 2
+            # [bs, end_idx-start_idx+1, seq_length, attention_head_size]
+            value_slice = value_layer_repeat[:, start_idx:end_idx+1, :, :]
+            # mean: -> [bs, seq_length, attention_head_size]
+            value_slice_mean = torch.mean(value_slice, axis=1, keepdim=False)
+            # @: multiply -> [bs, seq_length, attention_head_size]
+            context_layer[:, x, :, :] += torch.matmul(attention_probs[:, x, :, :], value_slice_mean)
 
         # 调换维度,准备合并多头
         # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
@@ -562,11 +596,11 @@ class BertCrossattLayer(nn.Module):
         print("BertCrossattLayer init")
         super().__init__()
         if config.type == 'base':
-            self.att = BertAttention(config)
+            self.att = BertAttention(config, current_num_layers)
         elif config.type == 'exchange':
-            self.att = BertExchangeAttention(config)
-        elif config.type == 'pooling':
-            self.att = BertPoolingAttention(config)
+            self.att = BertExchangeAttention(config, current_num_layers)
+        elif config.type == 'meanpooling':
+            self.att = BertMeanPoolingAttention(config, current_num_layers)
         else:
             raise ValueError("Invalid type of cross attention layer: %s" % config.type)
         self.output = BertAttOutput(config)
@@ -584,8 +618,8 @@ class LXRTXLayer(nn.Module):
         self.visual_attention = BertCrossattLayer(config, current_num_layers)
 
         # Self-attention Layers
-        self.lang_self_att = BertSelfattLayer(config)
-        self.visn_self_att = BertSelfattLayer(config)
+        self.lang_self_att = BertSelfattLayer(config, current_num_layers)
+        self.visn_self_att = BertSelfattLayer(config, current_num_layers)
 
         # Intermediate and Output Layers (FFNs)
         self.lang_inter = BertIntermediate(config)
@@ -1189,13 +1223,15 @@ class LXRTFeatureExtraction(BertPreTrainedModel):
     """
     BERT model for classification.
     """
-    def __init__(self, config, mode='lxr'):
+    def __init__(self, config, mode='lxr', args=None):
         print("LXRTFeatureExtraction init")
         """
         :param config:
         :param mode:  Number of visual layers
         """
         super().__init__(config)
+        config.type = args.type
+        print("config.type: ", config.type)
         self.bert = LXRTModel(config)
         self.mode = mode
         self.apply(self.init_bert_weights)

@@ -9,6 +9,5 @@
 /data/
 
 test.py
-run.txt
 # !data/**/*.py
 # !data/**/*.md

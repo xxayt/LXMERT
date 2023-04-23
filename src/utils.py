@@ -22,7 +22,7 @@ FIELDNAMES = ["img_id", "img_h", "img_w", "objects_id", "objects_conf",
               "attrs_id", "attrs_conf", "num_boxes", "boxes", "features"]
 
 
-def load_obj_tsv(fname, topk=None):
+def load_obj_tsv(fname, topk=None, logger=None):
     """Load object features from tsv file.
 
     :param fname: The path to the tsv file.
@@ -33,7 +33,7 @@ def load_obj_tsv(fname, topk=None):
     """
     data = []
     start_time = time.time()
-    print("Start to load Faster-RCNN detected objects from %s" % fname)
+    logger.info("Start to load Faster-RCNN detected objects from %s" % fname)
     with open(fname) as f:
         reader = csv.DictReader(f, FIELDNAMES, delimiter="\t")
         for i, item in enumerate(reader):
@@ -59,7 +59,7 @@ def load_obj_tsv(fname, topk=None):
             if topk is not None and len(data) == topk:
                 break
     elapsed_time = time.time() - start_time
-    print("Loaded %d images in file %s in %d seconds." % (len(data), fname, elapsed_time))
+    logger.info("Loaded %d images in file %s in %d seconds." % (len(data), fname, elapsed_time))
     return data
 
 

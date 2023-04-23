@@ -2,7 +2,6 @@
 # Copyleft 2019 project LXRT.
 
 import os
-import collections
 
 import torch
 import time
@@ -17,25 +16,12 @@ from param import args
 from utils import *
 from pretrain.qa_answer_table import load_lxmert_qa
 from tasks.vqa_model import VQAModel
-from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
-# 创建具有命名字段的 tuple 子类的 factory 函数 (具名元组)
-DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
+from tasks.vqa_data import get_data_tuple
 
 SHOWITER_TRAIN_BASE_NUM = 1500 # 19753  # bs=32
 SHOWITER_EVAL_BASE_NUM = 3 # 26  # bs=1024
 SHOWITER_TRAIN_TINY_NUM = 10 # 90
 SHOWITER_EVAL_TINY_NUM = 1 # 3
-
-def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False) -> DataTuple:
-    Dataset = VQADataset(splits)
-    tset = VQATorchDataset(Dataset)
-    evaluator = VQAEvaluator(Dataset)
-    data_loader = DataLoader(
-        tset, batch_size=bs,
-        shuffle=shuffle, num_workers=args.num_workers,
-        drop_last=drop_last, pin_memory=True
-    )
-    return DataTuple(dataset=Dataset, loader=data_loader, evaluator=evaluator)
 
 def main(args):
     # get logger
@@ -50,8 +36,8 @@ def main(args):
         logger.info('--{0} {1}'.format(param, vars(args)[param]))
 
     # get datasets
-    train_tuple = get_data_tuple(args.train, bs=args.batch_size, shuffle=True, drop_last=True)
-    eval_tuple = get_data_tuple(args.valid, bs=1024, shuffle=False, drop_last=False) if args.valid != "" else None
+    train_tuple = get_data_tuple(args.train, bs=args.batch_size, shuffle=True, drop_last=True, logger=logger)
+    eval_tuple = get_data_tuple(args.valid, bs=1024, shuffle=False, drop_last=False, logger=logger) if args.valid != "" else None
     # get net
     logger.info(f"Creating model: VQAModel")
     model = VQAModel(train_tuple.dataset.num_answers)
@@ -82,35 +68,55 @@ def main(args):
     model.cuda()
     model = torch.nn.DataParallel(model)
 
-    # Train
+    start_epoch = 0
     max_accuracy = 0.0
+    # 继续训练
+    if args.resume:
+        if args.resume in ['Best', 'Last']:
+            args.resume = os.path.join(args.path_log, '%s-%s.pth' % (args.name, args.resume))
+        if os.path.isfile(args.resume):
+            logger.info("=> loading checkpoint '{}'".format(args.resume))
+            # Map model to be loaded to specified single gpu.
+            state_dict = torch.load(args.resume)
+            if 'model' in state_dict:
+                start_epoch = state_dict['epoch'] + 1
+                model.load_state_dict(state_dict['model'],strict=False)
+                optimizer.load_state_dict(state_dict['optimizer'])
+                logger.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, state_dict['epoch']))
+            else:
+                model.load_state_dict(state_dict)
+                logger.info("=> loaded checkpoint '{}'".format(args.resume))
+            if 'max_accuracy' in state_dict:
+                max_accuracy = state_dict['max_accuracy']
+            val_loss, val_acc = validate(eval_tuple, model, loss_function, state_dict['epoch'], logger, args)
+            max_accuracy = max(max_accuracy, val_acc)
+            logger.info(f'Max accuracy: {max_accuracy:.4f}%')
+        else:
+            logger.info("=> no checkpoint found at '{}'".format(args.resume))
+
+
+
+    # Train
     logger.info("Start training")
     best_acc1 = 0.0
     start_time = time.time()
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         # train
-        train_loss, train_acc = train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epoch, logger, args)
+        train_loss, train_acc = train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epoch, logger, args, tb_writer=tb_writer)
         save_checkpoint(epoch, model, optimizer, max_accuracy, args, logger, save_name='Last')
         # validate
         logger.info(f"**********Latest val***********")
-        val_loss, val_acc = validate(eval_tuple, model, loss_function, epoch, logger, args)
+        val_loss, val_acc = validate(eval_tuple, model, loss_function, epoch, logger, args, tb_writer=tb_writer)
         if val_acc > best_acc1:
             best_acc1 = val_acc
             save_checkpoint(epoch, model, optimizer, max_accuracy, args, logger, save_name='Best')
         logger.info('Exp path: %s' % args.path_log)
-
-        tags = ["train_loss", "train_acc", "val_loss", "val_acc", "learning_rate"]
-        tb_writer.add_scalar(tags[0], train_loss, epoch)
-        tb_writer.add_scalar(tags[1], train_acc, epoch)
-        tb_writer.add_scalar(tags[2], val_loss, epoch)
-        tb_writer.add_scalar(tags[3], val_acc, epoch)
-        tb_writer.add_scalar(tags[4], optimizer.param_groups[0]["lr"], epoch)
     # 总时间
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('Training time {}'.format(total_time_str))
 
-def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epoch, logger, args):
+def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epoch, logger, args, tb_writer=None):
     Dataset, train_loader, evaluator = train_tuple
     model.train()
     optimizer.zero_grad()
@@ -119,7 +125,7 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
     quesid2ans = {}
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
-    acc1_meter = AverageMeter()
+    score_meter = AverageMeter()
     start = time.time()
     end = time.time()
     for iter, (ques_id, feats, boxes, sent, target) in enumerate(train_loader):
@@ -154,6 +160,7 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         batch_time.update(time.time() - end)  # 记录每次迭代batch所需时间
         end = time.time()
         loss_meter.update(loss.item(), output.size(0))  # output.size(0)
+        score_meter.update(train_score, output.size(0))  # output.size(0) = 3129??
 
         # log输出训练参数
         train_interval = SHOWITER_TRAIN_TINY_NUM if args.tiny else SHOWITER_TRAIN_BASE_NUM 
@@ -164,24 +171,30 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
                 f'eta {datetime.timedelta(seconds=int(etas))}\t'
                 f'time {batch_time.val:.4f} ({batch_time.avg:.4f})\t'
                 f'loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
-                f'train acc: {train_score}\t')
-                # f'train acc: {evaluator.evaluate(quesid2ans) * 100.}\t')
+                f'train_score {score_meter.val:.4f} ({score_meter.avg:.4f})\t')
+        
+        # tensorboard记录训练参数
+        if tb_writer is not None:
+            tags = ["train_loss", "train_acc"]
+            tb_writer.add_scalar(tags[0], loss_meter.avg, epoch * num_steps + iter)
+            tb_writer.add_scalar(tags[1], train_score, epoch * num_steps + iter)
+    
     logger.info(f"Train Score: {train_score}")
-    # logger.info(f"Train Score: {evaluator.evaluate(quesid2ans) * 100.}")
     epoch_time = time.time() - start
     logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
     return loss_meter.avg, train_score
 
 @torch.no_grad()
-def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None):
+def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None, tb_writer=None):
     logger.info('eval epoch {}'.format(epoch))
     Dataset, val_loader, evaluator = eval_tuple
     model.eval()
     
+    num_steps = len(val_loader)
     quesid2ans = {}
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
-    acc1_meter = AverageMeter()
+    score_meter = AverageMeter()
     end = time.time()
     for iter, (ques_id, feats, boxes, sent, target) in enumerate(val_loader):
         with torch.no_grad():
@@ -204,16 +217,24 @@ def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None):
 
         # 更新记录
         loss_meter.update(loss.item(), target.size(0))
+        score_meter.update(eval_score, target.size(0))
         batch_time.update(time.time() - end)
         end = time.time()
         # log输出测试参数
         eval_interval = SHOWITER_EVAL_TINY_NUM if args.tiny else SHOWITER_EVAL_BASE_NUM 
         if iter % eval_interval == 0:
             logger.info(
-                f'Test: [{iter}/{len(val_loader)}]\t'
+                f'Test: [{iter}/{num_steps}]\t'
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
-                f'eval score {eval_score})\t')
+                f'eval_score {score_meter.val:.4f} ({score_meter.avg:.4f})\t')
+        
+        # tensorboard记录测试参数
+        if tb_writer is not None:
+            tags = ["eval_loss", "eval_acc"]
+            tb_writer.add_scalar(tags[0], loss_meter.avg, epoch * num_steps + iter)
+            tb_writer.add_scalar(tags[1], eval_score, epoch * num_steps + iter)
+    
     if dump is not None:
         evaluator.dump_result(quesid2ans, dump)
     logger.info(f"Eval Score: {eval_score}")

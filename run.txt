@@ -1,0 +1,84 @@
+# 国内网络
+export https_proxy=http://183.174.229.137:3128
+curl www.baidu.com
+# 国外网络
+export http_proxy=http://183.174.229.137:9877
+curl www.google.com
+
+tensorboard --logdir ./logs/[path of tensorboard file] --port=[eg:6008]
+
+# tiny
+bash run/vqa_finetune.bash 1 vqa_tiny --tiny --type base
+bash run/vqa2_finetune.bash 1 vqa2_tiny_base --tiny --type base
+bash run/vqa2_finetune.bash 1 vqa2_tiny_exchange --tiny --type exchange
+bash run/vqa2_finetune.bash 1 vqa2_tiny_meanpooling --tiny --type meanpooling
+# large
+bash run/vqa_finetune.bash 0 vqa_large --type base
+bash run/vqa2_finetune.bash 1 vqa2_large_base --type base
+bash run/vqa2_finetune.bash 1 vqa2_large_exchange --type exchange
+
+bash run/vqa_test.bash 0 vqa_lxr_results --test test --load logs/vqa/vqa_lxr/BEST
+
+
+# tmux commands
+tmux ls  # 查看当前 Tmux 会话
+tmux new -s <session-name>  # 新建会话
+tmux attach -t <session-name>  # 接入会话
+# tmux attach -t res_only
+# 分离回话！！！
+tmux detach  # 可在命令行输入时
+直接关闭窗口  # 模型运行，不可在命令行输入时
+tmux kill-session -t <session-name>  # 杀死会话
+tmux rename-session -t <old-name> <new-name>  # 重命名会话
+
+# 杀内存
+fuser -v /dev/nvidia*
+kill -9 ...
+
+
+LXRT encoder with 9 l_layers, 5 x_layers, and 5 r_layers
+------------------------------------------------------
+BertConfig init
+LXRTFeatureExtraction init
+BertPreTrainedModel init
+LXRTModel init
+BertPreTrainedModel init
+BertEmbeddings init
+
+LXRTEncoder init
+VisualFeatEncoder init
+
+# 9 x :
+BertLayer init
+BertSelfattLayer init
+BertAttention init
+BertAttOutput init
+BertIntermediate init
+BertOutput init
+
+# 5 x :
+BertLayer init
+BertSelfattLayer init
+BertAttention init
+BertAttOutput init
+BertIntermediate init
+BertOutput init
+
+
+# 5 x :
+LXRTXLayer init
+BertCrossattLayer init
+BertAttention init
+BertAttOutput init
+BertSelfattLayer init
+BertAttention init
+BertAttOutput init
+BertSelfattLayer init
+BertAttention init
+BertAttOutput init
+BertIntermediate init
+BertOutput init
+BertIntermediate init
+BertOutput init
+
+BertPooler init

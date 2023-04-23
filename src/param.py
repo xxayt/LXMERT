@@ -65,6 +65,7 @@ def parse_args():
                              'the model would be trained from scratch. If --fromScratch is'
                              ' not specified, the model would load BERT-pre-trained weights by'
                              ' default. ')
+    parser.add_argument('--resume', type=str, default='None', help='path to Last checkpoint (default: none)')
 
     # Optimization
     parser.add_argument("--mceLoss", dest='mce_loss', action='store_const', default=False, const=True)
@@ -74,6 +75,7 @@ def parse_args():
     parser.add_argument("--llayers", default=9, type=int, help='Number of Language layers')
     parser.add_argument("--xlayers", default=5, type=int, help='Number of CROSS-modality layers.')
     parser.add_argument("--rlayers", default=5, type=int, help='Number of object Relationship layers.')
+    parser.add_argument("--type", default='base', type=str, help='base | exchange | meanpooling | maxpooling')
 
     # LXMERT Pre-training Config
     parser.add_argument("--taskMatched", dest='task_matched', action='store_const', default=False, const=True)

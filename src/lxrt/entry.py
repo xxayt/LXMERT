@@ -92,7 +92,8 @@ class LXRTEncoder(nn.Module):
         # Build LXRT Model
         self.model = LXRTFeatureExtraction.from_pretrained(
             "bert-base-uncased",
-            mode=mode
+            mode=mode,
+            args=args
         )
 
         if args.from_scratch:
