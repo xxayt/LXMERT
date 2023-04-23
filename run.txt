@@ -14,8 +14,8 @@ bash run/vqa2_finetune.bash 1 vqa2_tiny_exchange --tiny --type exchange
 bash run/vqa2_finetune.bash 1 vqa2_tiny_meanpooling --tiny --type meanpooling
 # large
 bash run/vqa_finetune.bash 0 vqa_large --type base
-bash run/vqa2_finetune.bash 1 vqa2_large_base --type base
-bash run/vqa2_finetune.bash 1 vqa2_large_exchange --type exchange
+bash run/vqa2_finetune.bash 0 vqa2_large_base --type base
+bash run/vqa2_finetune.bash 1 vqa2_large_exchange --type exchange --resume Last
 
 bash run/vqa_test.bash 0 vqa_lxr_results --test test --load logs/vqa/vqa_lxr/BEST
 
