@@ -3,6 +3,7 @@
 *.zip
 /snap
 /logs
+# !/logs/**/*.log
 
 **/__pycache__/
 

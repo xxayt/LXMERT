@@ -382,10 +382,14 @@ class BertExchangeAttention(nn.Module):
         attention_scores = torch.zeros_like(query_layer @ key_layer.transpose(-1, -2))
         # Combine the query and key layers follow Exchange-Attention
         for x in range(self.num_attention_heads):
+            '''self.num_attention_heads = 12, self.current_num_layers = 0 ~ 5
+            Set (offset):
+            current_num_layers is i: i
+            '''
+            offset = self.current_num_layers
             # transpose: -> [bs, attention_head_size, seq_length]
             # @: multiply -> [bs, seq_length, seq_length]
-            # attention_scores[:, x, :, :] = torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + 0) % self.num_attention_heads, :, :].transpose(-1, -2))
-            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + self.current_num_layers) % self.num_attention_heads, :, :].transpose(-1, -2))
+            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + offset) % self.num_attention_heads, :, :].transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
@@ -401,9 +405,96 @@ class BertExchangeAttention(nn.Module):
         context_layer = torch.zeros_like(attention_probs @ value_layer)
         # Combine the attention probabilities and value layers follow Exchange-Attention
         for x in range(self.num_attention_heads):
+            offset = self.current_num_layers
             # @: multiply -> [bs, seq_length, attention_head_size]
-            # context_layer[:, x, :, :] = torch.matmul(attention_probs[:, x, :, :], value_layer[:, (x + 0) % self.num_attention_heads, :, :])
-            context_layer[:, x, :, :] += torch.matmul(attention_probs[:, x, :, :], value_layer[:, (x + self.current_num_layers) % self.num_attention_heads, :, :])
+            context_layer[:, x, :, :] += torch.matmul(attention_probs[:, x, :, :], value_layer[:, (x + offset) % self.num_attention_heads, :, :])
+
+        # 调换维度,准备合并多头
+        # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        context_layer = context_layer.transpose(1, 2).contiguous()
+        # context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # 合并多头中的信息
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, seq_length, all_head_size]
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)  # 相当于reshape
+        return context_layer
+
+class BertExchange2Attention(nn.Module):
+    def __init__(self, config, current_num_layers, ctx_dim=None):
+        print("BertExchange2Attention init")
+        super().__init__()
+        if config.hidden_size % config.num_attention_heads != 0:
+            raise ValueError(
+                "The hidden size (%d) is not a multiple of the number of attention "
+                "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+        self.current_num_layers = current_num_layers
+        self.num_attention_heads = config.num_attention_heads
+        self.attention_head_size = int(config.hidden_size / config.num_attention_heads) # 768/12=64
+        # all_head_size = hidden_size
+        self.all_head_size = self.num_attention_heads * self.attention_head_size # 12*64=768
+
+        # visual_dim = 2048
+        if ctx_dim is None:
+            ctx_dim =config.hidden_size
+        self.query = nn.Linear(config.hidden_size, self.all_head_size)
+        self.key = nn.Linear(ctx_dim, self.all_head_size)
+        self.value = nn.Linear(ctx_dim, self.all_head_size)
+
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+    # 拆分多头
+    def transpose_for_scores(self, x):
+        # [bs, seq_length, all_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)  # 相当于reshape
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        x = x.transpose(1, 2) # x.permute(0, 2, 1, 3)
+        return x
+
+    def forward(self, hidden_states, context, attention_mask=None):
+        # hidden_states -> query; context -> key, value
+        # [bs, seq_length, v_hidden_size] -> [bs, seq_length, all_head_size]
+        mixed_query_layer = self.query(hidden_states)
+        mixed_key_layer = self.key(context)
+        mixed_value_layer = self.value(context)
+
+        # [bs, seq_length, all_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+        key_layer = self.transpose_for_scores(mixed_key_layer)
+        value_layer = self.transpose_for_scores(mixed_value_layer)
+
+        # Initialize a tensor to store the new attention scores
+        attention_scores = torch.zeros_like(query_layer @ key_layer.transpose(-1, -2))
+        # Combine the query and key layers follow Exchange-Attention
+        for x in range(self.num_attention_heads):
+            '''self.num_attention_heads = 12, self.current_num_layers = 0 ~ 8
+            Set (offset):
+            current_num_layers in [0, 2]: 0
+            current_num_layers in [3, 5]: 1
+            current_num_layers in [6, 8]: 2
+            '''
+            offset = self.current_num_layers // 3
+            # transpose: -> [bs, attention_head_size, seq_length]
+            # @: multiply -> [bs, seq_length, seq_length]
+            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + offset) % self.num_attention_heads, :, :].transpose(-1, -2))
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+
+        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        if attention_mask is not None:
+            attention_scores = attention_scores + attention_mask
+        # Normalize the attention scores to probabilities.
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        # This is actually dropping out entire tokens to attend to, which might
+        # seem a bit unusual, but is taken from the original Transformer paper.
+        attention_probs = self.dropout(attention_probs)
+
+        # Initialize a tensor to store the new context layer
+        context_layer = torch.zeros_like(attention_probs @ value_layer)
+        # Combine the attention probabilities and value layers follow Exchange-Attention
+        for x in range(self.num_attention_heads):
+            offset = self.current_num_layers // 3
+            # @: multiply -> [bs, seq_length, attention_head_size]
+            context_layer[:, x, :, :] += torch.matmul(attention_probs[:, x, :, :], value_layer[:, (x + offset) % self.num_attention_heads, :, :])
 
         # 调换维度,准备合并多头
         # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
@@ -465,6 +556,12 @@ class BertMeanPoolingAttention(nn.Module):
         key_layer_repeat = key_layer.repeat(1, 3, 1, 1) # [bs, num_attention_heads*3, seq_length, attention_head_size]
         for x in range(self.num_attention_heads):
             x_next = x + self.num_attention_heads
+            '''self.num_attention_heads = 12, self.current_num_layers = 0 ~ 5
+            Set (start_idx, end_idx):
+            current_num_layers in [0, 0]: (0, 0)
+            current_num_layers in [1, 2]: (-1, 1)
+            current_num_layers in [3, 4]: (-2, 2)
+            '''
             start_idx = x_next - (self.current_num_layers + 1) // 2
             end_idx = x_next + (self.current_num_layers + 1) // 2
             # [bs, end_idx-start_idx+1, seq_length, attention_head_size]
@@ -490,7 +587,7 @@ class BertMeanPoolingAttention(nn.Module):
         value_layer_repeat = value_layer.repeat(1, 3, 1, 1) # [bs, num_attention_heads*3, seq_length, attention_head_size]
         for x in range(self.num_attention_heads):
             x_next = x + self.num_attention_heads
-            start_idx = x_next - (self.current_num_layers // 2)
+            start_idx = x_next - (self.current_num_layers + 1) // 2
             end_idx = x_next + (self.current_num_layers + 1) // 2
             # [bs, end_idx-start_idx+1, seq_length, attention_head_size]
             value_slice = value_layer_repeat[:, start_idx:end_idx+1, :, :]
@@ -600,6 +697,8 @@ class BertCrossattLayer(nn.Module):
             self.att = BertAttention(config, current_num_layers)
         elif config.type == 'exchange':
             self.att = BertExchangeAttention(config, current_num_layers)
+        elif config.type == 'exchange2':
+            self.att = BertExchange2Attention(config, current_num_layers)
         elif config.type == 'meanpooling':
             self.att = BertMeanPoolingAttention(config, current_num_layers)
         else:
