@@ -260,6 +260,7 @@ class BertConfig(object):
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
+
 BertLayerNorm = torch.nn.LayerNorm
 
 class BertAttention(nn.Module):
@@ -464,7 +465,7 @@ class BertMeanPoolingAttention(nn.Module):
         key_layer_repeat = key_layer.repeat(1, 3, 1, 1) # [bs, num_attention_heads*3, seq_length, attention_head_size]
         for x in range(self.num_attention_heads):
             x_next = x + self.num_attention_heads
-            start_idx = x_next - (self.current_num_layers // 2)
+            start_idx = x_next - (self.current_num_layers + 1) // 2
             end_idx = x_next + (self.current_num_layers + 1) // 2
             # [bs, end_idx-start_idx+1, seq_length, attention_head_size]
             key_slice = key_layer_repeat[:, start_idx:end_idx+1, :, :]

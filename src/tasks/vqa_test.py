@@ -17,25 +17,13 @@ from param import args
 from utils import *
 from pretrain.qa_answer_table import load_lxmert_qa
 from tasks.vqa_model import VQAModel
-from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
-# 创建具有命名字段的 tuple 子类的 factory 函数 (具名元组)
-DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
+from tasks.vqa_data import get_data_tuple
 
 SHOWITER_TRAIN_BASE_NUM = 1500 # 19753
 SHOWITER_EVAL_BASE_NUM = 3 # 26
 SHOWITER_TRAIN_TINY_NUM = 10 # 90
 SHOWITER_EVAL_TINY_NUM = 1 # 3
 
-def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False) -> DataTuple:
-    Dataset = VQADataset(splits)
-    tset = VQATorchDataset(Dataset)
-    evaluator = VQAEvaluator(Dataset)
-    data_loader = DataLoader(
-        tset, batch_size=bs,
-        shuffle=shuffle, num_workers=args.num_workers,
-        drop_last=drop_last, pin_memory=True
-    )
-    return DataTuple(dataset=Dataset, loader=data_loader, evaluator=evaluator)
 
 def main(args):
     # get logger
@@ -47,28 +35,21 @@ def main(args):
     for param in sorted(vars(args).keys()):  # 遍历args的属性对象
         logger.info('--{0} {1}'.format(param, vars(args)[param]))
 
-    # get datasets
-    train_tuple = get_data_tuple(args.train, bs=args.batch_size, shuffle=True, drop_last=True)
-    if 'test' in args.test:
-        test_tuple = get_data_tuple(args.test, bs=950, shuffle=False, drop_last=False)
-        dump_path = os.path.join(args.path_log, 'test_predict.json')
-    elif 'val' in args.test:
-        test_tuple = get_data_tuple('minival', bs=950, shuffle=False, drop_last=False)
-        dump_path = os.path.join(args.path_log, 'minival_predict.json')
-    else:
-        assert False, "No such test option for %s" % args.test
+    # get tiny train datasets
+    train_tuple = get_data_tuple(args.train, bs=args.batch_size, shuffle=True, drop_last=True, logger=logger)  # tiny=True使得train_tuple加载速度很快
+
     # get net
     logger.info(f"Creating model: VQAModel")
-    print("train_tuple.dataset.num_answers: ", train_tuple.dataset.num_answers)
-    model = VQAModel(train_tuple.dataset.num_answers)
+    model = VQAModel(train_tuple.dataset.num_answers)  # train_tuple.dataset.num_answers=3129
     # get criterion 损失函数
     loss_function = nn.BCEWithLogitsLoss()
 
     # load VQA weights
     if args.load is not None:
         logger.info("Load VQA model from %s" % args.load)
-        state_dict = torch.load("%s.pth" % args.load)
-        model.load_state_dict(state_dict)
+        checkpoint = torch.load("%s" % args.load)
+        # 模型保存加入了'module.'前缀，需要去掉
+        model.load_state_dict({k.replace('module.', ''): v for k, v in checkpoint['model'].items()})
     
     model.cuda()
     model = torch.nn.DataParallel(model)
@@ -76,31 +57,42 @@ def main(args):
     # Test
     logger.info(f"Start testing")
     args.fast = args.tiny = False       # Always loading all data in test
-    validate(test_tuple, model, loss_function, 0, logger, args, dump=dump_path)
+    if 'test' in args.test:
+        test_tuple = get_data_tuple(args.test, bs=950, shuffle=False, drop_last=False, logger=logger)
+        dump_path = os.path.join(args.path_log, 'test_predict.json')
+        test(test_tuple, model, 0, logger, args, dump=dump_path)
+    elif 'val' in args.test:
+        test_tuple = get_data_tuple('minival', bs=950, shuffle=False, drop_last=False, logger=logger)
+        dump_path = os.path.join(args.path_log, 'minival_predict.json')
+        validate(test_tuple, model, loss_function, 0, logger, args, dump=dump_path)
+    else:
+        assert False, "No such test option for %s" % args.test
 
 @torch.no_grad()
-def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None):
+def validate(test_tuple, model, loss_function, epoch, logger, args, dump=None):
     logger.info('eval epoch {}'.format(epoch))
-    Dataset, val_loader, evaluator = eval_tuple
+    Dataset, val_loader, evaluator = test_tuple
     model.eval()
     
     quesid2ans = {}
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
-    acc1_meter = AverageMeter()
+    score_meter = AverageMeter()
     end = time.time()
-    for iter, (ques_id, feats, boxes, sent, target) in enumerate(val_loader):
+    for iter, data in enumerate(val_loader):
         with torch.no_grad():
+            # ques_id, feats, boxes, sent, target = data
+            ques_id, feats, boxes, sent = data[:4]   # Avoid seeing ground truth
             # 将数据转移到GPU上
             feats = feats.cuda(non_blocking=True)
             boxes = boxes.cuda(non_blocking=True)
-            target = target.cuda(non_blocking=True)
+            # target = target.cuda(non_blocking=True)
 
             # 计算模型输出
             output = model(feats, boxes, sent)
 
-            loss = loss_function(output, target)
-            loss = loss * output.size(1) # *3129
+            # loss = loss_function(output, target)
+            # loss = loss * output.size(1) # *3129
             # 计算准确率
             _, label = output.max(1)  # dim=1按行取最大
             for qid, ans_index in zip(ques_id, label.cpu().numpy()):
@@ -109,7 +101,8 @@ def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None):
             eval_score = evaluator.evaluate(quesid2ans) * 100.
 
         # 更新记录
-        loss_meter.update(loss.item(), target.size(0))
+        # loss_meter.update(loss.item(), target.size(0))
+        score_meter.update(eval_score, 3129)  # target.size(0)
         batch_time.update(time.time() - end)
         end = time.time()
         # log输出测试参数
@@ -118,12 +111,36 @@ def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None):
             logger.info(
                 f'Test: [{iter}/{len(val_loader)}]\t'
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
-                f'eval score {eval_score})\t')
+                # f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
+                f'eval score {score_meter.val:.4f} ({score_meter.avg:.4f})\t')
     if dump is not None:
         evaluator.dump_result(quesid2ans, dump)
-    logger.info(f"Eval Score: {eval_score}")
-    return loss_meter.avg, eval_score
+    logger.info(f"Eval avg Score: {score_meter.avg}")
+    return eval_score
+
+@torch.no_grad()
+def test(test_tuple, model, epoch, logger, args, dump=None):
+    logger.info('eval epoch {}'.format(epoch))
+    Dataset, val_loader, evaluator = test_tuple
+    model.eval()
+    
+    quesid2ans = {}
+    for iter, data in enumerate(val_loader):
+        with torch.no_grad():
+            ques_id, feats, boxes, sent = data[:4]   # Avoid seeing ground truth
+            # 将数据转移到GPU上
+            feats = feats.cuda(non_blocking=True)
+            boxes = boxes.cuda(non_blocking=True)
+            # 计算模型输出
+            output = model(feats, boxes, sent)
+            # 计算准确率
+            _, label = output.max(1)  # dim=1按行取最大
+            for qid, ans_index in zip(ques_id, label.cpu().numpy()):
+                ans = Dataset.label2ans[ans_index]
+                quesid2ans[qid.item()] = ans
+    # 将预测结果保存到json文件中
+    if dump is not None:
+        evaluator.dump_result(quesid2ans, dump)
 
 if __name__ == "__main__":
     main(args)

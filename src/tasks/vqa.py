@@ -16,22 +16,7 @@ from param import args
 from utils import create_logging
 from pretrain.qa_answer_table import load_lxmert_qa
 from tasks.vqa_model import VQAModel
-from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
-# 创建具有命名字段的 tuple 子类的 factory 函数 (具名元组)
-DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
-
-
-def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False) -> DataTuple:
-    dset = VQADataset(splits)
-    tset = VQATorchDataset(dset)
-    evaluator = VQAEvaluator(dset)
-    data_loader = DataLoader(
-        tset, batch_size=bs,
-        shuffle=shuffle, num_workers=args.num_workers,
-        drop_last=drop_last, pin_memory=True
-    )
-
-    return DataTuple(dataset=dset, loader=data_loader, evaluator=evaluator)
+from tasks.vqa_data import get_data_tuple
 
 
 class VQA:
@@ -40,12 +25,12 @@ class VQA:
         self.logger = logger
         # Datasets
         self.train_tuple = get_data_tuple(
-            args.train, bs=args.batch_size, shuffle=True, drop_last=True
+            args.train, bs=args.batch_size, shuffle=True, drop_last=True, logger=self.logger
         )
         if args.valid != "":
             self.valid_tuple = get_data_tuple(
                 args.valid, bs=1024,
-                shuffle=False, drop_last=False
+                shuffle=False, drop_last=False, logger=self.logger
             )
         else:
             self.valid_tuple = None
@@ -187,7 +172,9 @@ class VQA:
 
     def load(self, path):
         self.logger.info("Load model from %s" % path)
-        state_dict = torch.load("%s.pth" % path)
+        state_dict = torch.load("%s" % path)
+        for k, v in state_dict.items():
+            print(k)
         self.model.load_state_dict(state_dict)
 
 def main(args):
@@ -215,7 +202,7 @@ def main(args):
         if 'test' in args.test:
             vqa.predict(
                 get_data_tuple(args.test, bs=950,
-                               shuffle=False, drop_last=False),
+                               shuffle=False, drop_last=False, logger=vqa.logger),
                 dump=os.path.join(args.save_dir, 'test_predict.json')
             )
         elif 'val' in args.test:
@@ -223,7 +210,7 @@ def main(args):
             # only validate on the minival set.
             result = vqa.evaluate(
                 get_data_tuple('minival', bs=950,
-                               shuffle=False, drop_last=False),
+                               shuffle=False, drop_last=False, logger=vqa.logger),
                 dump=os.path.join(args.save_dir, 'minival_predict.json')
             )
             logger.info(result)

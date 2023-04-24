@@ -16,8 +16,15 @@ bash run/vqa2_finetune.bash 1 vqa2_tiny_meanpooling --tiny --type meanpooling
 bash run/vqa_finetune.bash 0 vqa_large --type base
 bash run/vqa2_finetune.bash 0 vqa2_large_base --type base
 bash run/vqa2_finetune.bash 1 vqa2_large_exchange --type exchange --resume Last
+bash run/vqa2_finetune.bash 1 vqa2_large_meanpooling --type meanpooling --resume Last
+# local validate
+bash run/vqa_test.bash 0 vqa_lxr_results --test minival --load logs/vqa/vqa_lxr/BEST
+# test
+bash run/vqa_test.bash 0 vqa_src_base_results --test test --load logs/vqa/vqa_base/BEST.pth
+bash run/vqa2_test.bash 0 vqa2_large_base_results --test test --load logs/vqa/vqa2_large_base/vqa2_large_base-Best.pth
 
-bash run/vqa_test.bash 0 vqa_lxr_results --test test --load logs/vqa/vqa_lxr/BEST
+# scp
+scp -P 5102 zijie_xin@183.174.228.151:~/GeWu-Lab/LXMERT/logs/vqa/vqa_src_base_results/test_predict.json D:\2Codefield\VS_code\python\GeWuLab\LXMERT\logs\vqa\vqa_src_base_results
 
 
 # tmux commands
