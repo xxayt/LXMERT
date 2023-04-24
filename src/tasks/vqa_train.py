@@ -176,13 +176,13 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         # tensorboard记录训练参数
         if tb_writer is not None:
             tags = ["train_loss", "train_acc"]
-            tb_writer.add_scalar(tags[0], loss_meter.avg, epoch * num_steps + iter)
+            tb_writer.add_scalar(tags[0], loss.item(), epoch * num_steps + iter)
             tb_writer.add_scalar(tags[1], train_score, epoch * num_steps + iter)
     
-    logger.info(f"Train Score: {train_score}")
+    logger.info(f"Train avg Score: {score_meter.avg}")
     epoch_time = time.time() - start
     logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
-    return loss_meter.avg, train_score
+    return loss_meter.avg, score_meter.avg
 
 @torch.no_grad()
 def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None, tb_writer=None):
@@ -232,12 +232,12 @@ def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None, t
         # tensorboard记录测试参数
         if tb_writer is not None:
             tags = ["eval_loss", "eval_acc"]
-            tb_writer.add_scalar(tags[0], loss_meter.avg, epoch * num_steps + iter)
+            tb_writer.add_scalar(tags[0], loss.item(), epoch * num_steps + iter)
             tb_writer.add_scalar(tags[1], eval_score, epoch * num_steps + iter)
     
     if dump is not None:
         evaluator.dump_result(quesid2ans, dump)
-    logger.info(f"Eval Score: {eval_score}")
+    logger.info(f"Eval avg Score: {score_meter.avg}")
     return loss_meter.avg, eval_score
 
 if __name__ == "__main__":
