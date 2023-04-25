@@ -467,16 +467,22 @@ class BertExchange2Attention(nn.Module):
         attention_scores = torch.zeros_like(query_layer @ key_layer.transpose(-1, -2))
         # Combine the query and key layers follow Exchange-Attention
         for x in range(self.num_attention_heads):
-            '''self.num_attention_heads = 12, self.current_num_layers = 0 ~ 8
+            '''self.num_attention_heads = 12, self.current_num_layers = 0 ~ 10
             Set (offset):
-            current_num_layers in [0, 2]: 0
-            current_num_layers in [3, 5]: 1
-            current_num_layers in [6, 8]: 2
+            current_num_layers in (0, 1, 2, 3, 4): 0
+            current_num_layers in (5, 7, 9): 1
+            current_num_layers in (6, 8, 10): -1
             '''
-            offset = self.current_num_layers // 3
+            # offset = self.current_num_layers // 3
+            if self.current_num_layers in [0, 1, 2, 3, 4]:
+                offset = 0
+            elif self.current_num_layers in [5, 7, 9]:
+                offset = 1
+            else:
+                offset = -1
             # transpose: -> [bs, attention_head_size, seq_length]
             # @: multiply -> [bs, seq_length, seq_length]
-            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + offset) % self.num_attention_heads, :, :].transpose(-1, -2))
+            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_layer[:, (x + offset + self.num_attention_heads) % self.num_attention_heads, :, :].transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)

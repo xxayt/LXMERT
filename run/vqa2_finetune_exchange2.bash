@@ -8,7 +8,8 @@ output=logs/vqa/$name
 CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PYTHONPATH:./src \
     python src/tasks/vqa_train.py \
     --train train,nominival --valid minival  \
-    --llayers 9 --xlayers 9 --rlayers 5 \
-    --loadLXMERTQA logs/pretrained/model \
+    --llayers 9 --xlayers 11 --rlayers 5 \
+    --load logs/vqa/vqa2_large_base/vqa2_large_base-Best.pth \
     --batchSize 64 --optim bert --lr 5e-5 --epochs 8 \
     --tqdm --name $name --save_dir $output ${@:3}
+    # --loadLXMERTQA logs/pretrained/model \

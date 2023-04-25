@@ -31,7 +31,7 @@ def main(args):
     logger = create_logging(os.path.join(args.path_log, '%s-%s-train.log' % (creat_time, args.name)))  # 创建训练保存log文件
     # tensorboard为acc和loss画图
     tb_writer = SummaryWriter(args.path_log)
-    # print args
+    # logger.info args
     for param in sorted(vars(args).keys()):  # 遍历args的属性对象
         logger.info('--{0} {1}'.format(param, vars(args)[param]))
 
@@ -41,30 +41,44 @@ def main(args):
     # get net
     logger.info(f"Creating model: VQAModel")
     model = VQAModel(train_tuple.dataset.num_answers)
+
+    # load pre-trained weights 加载预训练权重
+    if args.load_lxmert_qa is not None:
+        logger.info("Loading LXMERT QA weights from %s" % args.load_lxmert_qa)
+        load_lxmert_qa(path=args.load_lxmert_qa, model=model, label2ans=train_tuple.dataset.label2ans, logger=logger)
+    if args.load is not None:
+        logger.info("Load VQA model from %s" % args.load)
+        checkpoint = torch.load("%s" % args.load)['model']
+        model_dict = model.state_dict()
+        state_dict = {k.replace('module.', ''):v for k,v in checkpoint.items() if k in model_dict.keys()}  # load same name layer weiget
+        model_dict.update(state_dict)
+        model.load_state_dict(model_dict, strict=False)  # 载入我自己训练的vqa_large_base模型权重
+        # 冻结后半部分权重  for exchange2
+        unfreeze_layers = ['x_layers.5', 'x_layers.6', 'x_layers.7', 'x_layers.8', 'x_layers.9', 'x_layers.10', 'bert.pooler', 'logit_fc']
+        for name, param in model.named_parameters():
+            param.requires_grad = False
+            for ele in unfreeze_layers:
+                if ele in name:
+                    param.requires_grad = True
+                    break
+    
     # get criterion 损失函数
     loss_function = nn.BCEWithLogitsLoss()
     # get optimizer 优化器
+    train_layer = [p for p in model.parameters() if p.requires_grad == True]  # 只优化需要更新的参数
     if 'bert' in args.optim:
         batch_per_epoch = len(train_tuple.loader)  # 90 or 19753
         t_total = int(batch_per_epoch * args.epochs)  # 90 * 4
-        print(f"Batch per epoch: {batch_per_epoch}, Total Iters: {t_total}")
+        logger.info(f"Batch per epoch: {batch_per_epoch}, Total Iters: {t_total}")
         logger.info(f"BertAdam Total Iters: {t_total}")
         from lxrt.optimization import BertAdam
-        optimizer = BertAdam(list(model.parameters()),
+        optimizer = BertAdam(list(train_layer),
                                 lr=args.lr,
                                 warmup=0.1,
                                 t_total=t_total)
     else:
-        optimizer = args.optimizer(model.parameters(), args.lr)
+        optimizer = args.optimizer(train_layer, args.lr)
 
-    # load pre-trained weights 加载预训练权重
-    # if args.load_lxmert is not None:
-    #     print("Loading LXMERT weights from %s" % args.load_lxmert)
-    #     model.lxrt_encoder.load(args.load_lxmert)
-    if args.load_lxmert_qa is not None:
-        print("Loading LXMERT QA weights from %s" % args.load_lxmert_qa)
-        load_lxmert_qa(path=args.load_lxmert_qa, model=model, label2ans=train_tuple.dataset.label2ans, logger=logger)
-    
     model.cuda()
     model = torch.nn.DataParallel(model)
 
@@ -93,7 +107,6 @@ def main(args):
             logger.info(f'Max accuracy: {max_accuracy:.4f}%')
         else:
             logger.info("=> no checkpoint found at '{}'".format(args.resume))
-
 
 
     # Train

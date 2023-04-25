@@ -140,18 +140,43 @@ def load_lxmert_qa(path, model, label2ans, logger):
     answer_state_dict['logit_fc.3.weight'] = new_answer_weight
     answer_state_dict['logit_fc.3.bias'] = new_answer_bias
 
+
+    # model_dict = model.lxrt_encoder.model.state_dict()  # 取出网络的模型，其中里面的参数是调用:_initialize_weights(self)生成的。
+    # state_dict = {k: v for k, v in bert_state_dict.items() if k in model_dict.keys()}
+    # 寻找网络中公共层，并保留预训练参数
+    # print(state_dict.keys())
+    # model_dict.update(state_dict)  # 将预训练参数更新到新的网络层
+    # model.lxrt_encoder.model.load_state_dict(model_dict, strict=False)  # 加载预训练参数
+    # model.lxrt_encoder.model.load_state_dict(bert_state_dict, strict=False)  # 加载预训练参数
+
     # Load Bert Weights
-    bert_model_keys = set(model.lxrt_encoder.model.state_dict().keys())
+    bert_model_keys = set(model.lxrt_encoder.model.state_dict().keys())  # VQAModel.LXRTEncoder.LXRTFeatureExtraction
     bert_loaded_keys = set(bert_state_dict.keys())
+    '''
+    logger.info("len(bert_model_keys - bert_loaded_keys)", len(bert_model_keys - bert_loaded_keys))
+    logger.info('model.lxrt_encoder.model.state_dict:')
+    for k, v in model.lxrt_encoder.model.state_dict().items():
+        logger.info(k)
+    logger.info("\n")
+    logger.info('bert_state_dict.state_dict:')
+    for k, v in bert_state_dict.items():
+        logger.info(k)
+    '''
     assert len(bert_model_keys - bert_loaded_keys) == 0
     model.lxrt_encoder.model.load_state_dict(bert_state_dict, strict=False)
 
     # Load Answer Logic FC Weights
     model_keys = set(model.state_dict().keys())
     ans_loaded_keys = set(answer_state_dict.keys())
+    '''
+    logger.info("len(ans_loaded_keys - model_keys)", len(ans_loaded_keys - model_keys))
+    logger.info('model.state_dict():')
+    for k, v in model.state_dict().items():
+        logger.info(k)
+    logger.info("\n")
+    logger.info('answer_state_dict.state_dict:')
+    for k, v in answer_state_dict.items():
+        logger.info(k)
+    '''
     assert len(ans_loaded_keys - model_keys) == 0
-
     model.load_state_dict(answer_state_dict, strict=False)
-
-
-

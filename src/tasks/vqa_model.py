@@ -47,6 +47,3 @@ class VQAModel(nn.Module):
         logit = self.logit_fc(x)
 
         return logit
-
-
-model = VQAModel(1000)
