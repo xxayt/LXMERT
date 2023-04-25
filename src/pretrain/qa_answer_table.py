@@ -162,7 +162,7 @@ def load_lxmert_qa(path, model, label2ans, logger):
     for k, v in bert_state_dict.items():
         logger.info(k)
     '''
-    assert len(bert_model_keys - bert_loaded_keys) == 0
+    # assert len(bert_model_keys - bert_loaded_keys) == 0
     model.lxrt_encoder.model.load_state_dict(bert_state_dict, strict=False)
 
     # Load Answer Logic FC Weights

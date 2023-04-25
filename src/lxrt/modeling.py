@@ -295,6 +295,10 @@ class BertAttention(nn.Module):
         return x
 
     def forward(self, hidden_states, context, attention_mask=None):
+        '''
+        seq_length = token_size
+        hidden_size = embedding_size
+        '''
         # hidden_states -> query; context -> key, value
         # [bs, seq_length, v_hidden_size] -> [bs, seq_length, all_head_size]
         mixed_query_layer = self.query(hidden_states)
@@ -577,6 +581,7 @@ class BertMeanPoolingAttention(nn.Module):
             # transpose: -> [bs, attention_head_size, seq_length]
             # @: multiply -> [bs, seq_length, seq_length]
             attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_slice_mean.transpose(-1, -2))
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         if attention_mask is not None:
@@ -606,6 +611,102 @@ class BertMeanPoolingAttention(nn.Module):
         # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
         context_layer = context_layer.transpose(1, 2).contiguous()
         # context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # 合并多头中的信息
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, seq_length, all_head_size]
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)  # 相当于reshape 
+        return context_layer
+
+class BertMaxPoolingAttention(nn.Module):
+    def __init__(self, config, current_num_layers, ctx_dim=None):
+        print("BertMaxPoolingAttention init")
+        super().__init__()
+        if config.hidden_size % config.num_attention_heads != 0:
+            raise ValueError(
+                "The hidden size (%d) is not a multiple of the number of attention "
+                "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+        self.current_num_layers = current_num_layers
+        self.num_attention_heads = config.num_attention_heads
+        self.attention_head_size = int(config.hidden_size / config.num_attention_heads) # 768/12=64
+        # all_head_size = hidden_size
+        self.all_head_size = self.num_attention_heads * self.attention_head_size # 12*64=768
+
+        # visual_dim = 2048
+        if ctx_dim is None:
+            ctx_dim = config.hidden_size
+        self.query = nn.Linear(config.hidden_size, self.all_head_size)
+        self.key = nn.Linear(ctx_dim, self.all_head_size)
+        self.value = nn.Linear(ctx_dim, self.all_head_size)
+
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+    # 拆分多头
+    def transpose_for_scores(self, x):
+        # [bs, seq_length, all_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)  # 相当于reshape
+        # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        x = x.transpose(1, 2) # x.permute(0, 2, 1, 3)
+        return x
+
+    def forward(self, hidden_states, context, attention_mask=None):
+        # hidden_states -> query; context -> key, value
+        # [bs, seq_length, v_hidden_size] -> [bs, seq_length, all_head_size]
+        mixed_query_layer = self.query(hidden_states)
+        mixed_key_layer = self.key(context)
+        mixed_value_layer = self.value(context)
+
+        # [bs, seq_length, all_head_size] -> [bs, num_attention_heads, seq_length, attention_head_size]
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+        key_layer = self.transpose_for_scores(mixed_key_layer)
+        value_layer = self.transpose_for_scores(mixed_value_layer)
+
+        # Initialize a tensor to store the new attention scores
+        attention_scores = torch.zeros_like(query_layer @ key_layer.transpose(-1, -2))
+        # Combine the query and key layers follow MaxPooling-Attention
+        for x in range(self.num_attention_heads):
+            # unsqueeze: -> [bs, 1, seq_length, attention_head_size]
+            query_layer_repeat = query_layer[:, x, :, :].unsqueeze(1)
+            # repeat: -> [bs, num_attention_heads, seq_length, attention_head_size]
+            query_layer_repeat = query_layer_repeat.repeat(1, self.num_attention_heads, 1, 1)
+            # multiply: -> [bs, num_attention_heads, seq_length, seq_length]
+            sim_matrix = torch.matmul(query_layer_repeat, key_layer.transpose(-1, -2))
+            # max: -> [bs, seq_length, seq_length]
+            sim_matrix, _ = torch.max(sim_matrix, dim=1)  # 在维度1上进行max操作
+            attention_scores[:, x, :, :] += sim_matrix
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+
+        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        if attention_mask is not None:
+            attention_scores = attention_scores + attention_mask
+        # Normalize the attention scores to probabilities.
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        # This is actually dropping out entire tokens to attend to, which might
+        # seem a bit unusual, but is taken from the original Transformer paper.
+        attention_probs = self.dropout(attention_probs)
+
+        '''
+        # Initialize a tensor to store the new attention scores
+        context_layer = torch.zeros_like(attention_probs @ value_layer)
+        # Combine the query and key layers follow MaxPooling-Attention
+        for x in range(self.num_attention_heads):
+            # unsqueeze: -> [bs, 1, seq_length, seq_length]
+            attention_probs_repeat = attention_probs[:, x, :, :].unsqueeze(1)
+            # repeat: -> [bs, num_attention_heads, seq_length, seq_length]
+            attention_probs_repeat = attention_probs_repeat.repeat(1, self.num_attention_heads, 1, 1)
+            # multiply: -> [bs, num_attention_heads, seq_length, attention_head_size]
+            sim_matrix = torch.matmul(attention_probs_repeat, value_layer)
+            # 在维度1上进行max操作
+            # max: -> [bs, seq_length, attention_head_size]
+            attention_scores[:, x, :, :] += torch.max(sim_matrix, dim=1)
+        '''
+
+        # @: multiply -> [bs, num_attention_heads, seq_length, attention_head_size]
+        context_layer = torch.matmul(attention_probs, value_layer)
+
+        # 调换维度,准备合并多头
+        # [bs, num_attention_heads, seq_length, attention_head_size] -> [bs, seq_length, num_attention_heads, attention_head_size]
+        context_layer = context_layer.transpose(1, 2).contiguous()
         # 合并多头中的信息
         # [bs, seq_length, num_attention_heads, attention_head_size] -> [bs, seq_length, all_head_size]
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -707,6 +808,8 @@ class BertCrossattLayer(nn.Module):
             self.att = BertExchange2Attention(config, current_num_layers)
         elif config.type == 'meanpooling':
             self.att = BertMeanPoolingAttention(config, current_num_layers)
+        elif config.type == 'maxpooling':
+            self.att = BertMaxPoolingAttention(config, current_num_layers)
         else:
             raise ValueError("Invalid type of cross attention layer: %s" % config.type)
         self.output = BertAttOutput(config)

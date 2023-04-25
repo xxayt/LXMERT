@@ -122,6 +122,7 @@ def main(args):
         val_loss, val_acc = validate(eval_tuple, model, loss_function, epoch, logger, args, tb_writer=tb_writer)
         if val_acc > best_acc1:
             best_acc1 = val_acc
+            logger.info(f"Best Eval avg Score: {best_acc1}")
             save_checkpoint(epoch, model, optimizer, max_accuracy, args, logger, save_name='Best')
         logger.info('Exp path: %s' % args.path_log)
     # 总时间
@@ -188,7 +189,7 @@ def train_one_epoch_local_data(train_tuple, model, loss_function, optimizer, epo
         
         # tensorboard记录训练参数
         if tb_writer is not None:
-            tags = ["train_loss", "train_acc"]
+            tags = ["train_loss", "train_score"]
             tb_writer.add_scalar(tags[0], loss.item(), epoch * num_steps + iter)
             tb_writer.add_scalar(tags[1], train_score, epoch * num_steps + iter)
     
@@ -244,14 +245,14 @@ def validate(eval_tuple, model, loss_function, epoch, logger, args, dump=None, t
         
         # tensorboard记录测试参数
         if tb_writer is not None:
-            tags = ["eval_loss", "eval_acc"]
+            tags = ["eval_loss", "eval_score"]
             tb_writer.add_scalar(tags[0], loss.item(), epoch * num_steps + iter)
             tb_writer.add_scalar(tags[1], eval_score, epoch * num_steps + iter)
     
     if dump is not None:
         evaluator.dump_result(quesid2ans, dump)
     logger.info(f"Eval avg Score: {score_meter.avg}")
-    return loss_meter.avg, eval_score
+    return loss_meter.avg, score_meter.avg
 
 if __name__ == "__main__":
     main(args)

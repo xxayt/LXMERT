@@ -34,7 +34,6 @@ def main(args):
     # print args
     for param in sorted(vars(args).keys()):  # 遍历args的属性对象
         logger.info('--{0} {1}'.format(param, vars(args)[param]))
-
     # get tiny train datasets
     train_tuple = get_data_tuple(args.train, bs=args.batch_size, shuffle=True, drop_last=True, logger=logger)  # tiny=True使得train_tuple加载速度很快
 
@@ -59,7 +58,8 @@ def main(args):
     args.fast = args.tiny = False       # Always loading all data in test
     if 'test' in args.test:
         test_tuple = get_data_tuple(args.test, bs=950, shuffle=False, drop_last=False, logger=logger)
-        dump_path = os.path.join(args.path_log, 'test_predict.json')
+        dump_path = os.path.join(args.path_log, args.load.split('/')[-1][:-4] + '-test_predict.json')
+        logger.info(f"Dump path: {dump_path}")
         test(test_tuple, model, 0, logger, args, dump=dump_path)
     elif 'val' in args.test:
         test_tuple = get_data_tuple('minival', bs=950, shuffle=False, drop_last=False, logger=logger)
@@ -138,8 +138,11 @@ def test(test_tuple, model, epoch, logger, args, dump=None):
             for qid, ans_index in zip(ques_id, label.cpu().numpy()):
                 ans = Dataset.label2ans[ans_index]
                 quesid2ans[qid.item()] = ans
+            if iter % 50 == 0:
+                logger.info(f"Eval {iter}/{len(val_loader)} finished")
     # 将预测结果保存到json文件中
     if dump is not None:
+        logger.info(f"Dump result to {dump}")
         evaluator.dump_result(quesid2ans, dump)
 
 if __name__ == "__main__":
