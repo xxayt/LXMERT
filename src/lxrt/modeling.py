@@ -30,6 +30,7 @@ from io import open
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, SmoothL1Loss
+from torch.nn import functional as F
 
 from .file_utils import cached_path
 
@@ -387,7 +388,7 @@ class BertExchangeAttention(nn.Module):
         # Combine the query and key layers follow Exchange-Attention
         for x in range(self.num_attention_heads):
             '''self.num_attention_heads = 12, self.current_num_layers = 0 ~ 5
-            Set (offset):
+            Set (offset): 0 ~ 5
             current_num_layers is i: i
             '''
             offset = self.current_num_layers
@@ -570,28 +571,33 @@ class BertMaxPoolingAttention(nn.Module):
 
         # Initialize a tensor to store the new attention scores
         attention_scores = torch.zeros_like(query_layer @ key_layer.transpose(-1, -2))  # [bs, num_attention_heads, token_size_q, token_size_k]
-        all_sim_index = torch.zeros_like(attention_scores)  # [bs, num_attention_heads, token_size_q, token_size_k]
+        all_sim_index = [[] for _ in range(self.num_attention_heads)]  # [num_attention_heads, []]
         # Combine the query and key layers follow MaxPooling-Attention
         for x in range(self.num_attention_heads):
-            print("query_layer.shape", query_layer.shape)  # [64, 12, 20, 64]
-            print("query_layer[:, x, :, :].shape", query_layer[:, x, :, :].shape)  # [64, 20, 64]
             # unsqueeze: -> [bs, 1, token_size_q, attention_head_size]
-            query_layer_repeat = query_layer[:, x, :, :].unsqueeze(1)
-            print("query_layer_repeat.shape", query_layer_repeat.shape)  # [64, 1, 20, 64]
+            query_layer_repeat, bs = query_layer[:, x, :, :].unsqueeze(1), query_layer.size(0)
             # repeat: -> [bs, num_attention_heads, token_size_q, attention_head_size]
             query_layer_repeat = query_layer_repeat.repeat(1, self.num_attention_heads, 1, 1)
-            print("query_layer_repeat.shape", query_layer_repeat.shape)  # [64, 12, 20, 64]
-            print("key_layer.shape", key_layer.shape)  # [64, 12, 36, 64]
+
             # multiply: -> [bs, num_attention_heads, token_size_q, token_size_k]
             sim_matrix = torch.matmul(query_layer_repeat, key_layer.transpose(-1, -2))
-            print("sim_matrix.shape", sim_matrix.shape)  # [64, 12, 20, 36]
+            # adaptive_avg_pool2d: -> [bs, num_attention_heads, 1, 1]
+            sim_matrix = F.adaptive_avg_pool2d(sim_matrix, (1,1))
+            # sort: -> [bs, num_attention_heads, 1, 1]
+            sim_matrix, sim_index = torch.sort(sim_matrix, dim=1, descending=True)
+            # attract the max index
+            sim_index = sim_index[:, :1, :, :] # [64, 1, 1, 1] 提取最大值的索引
+            all_sim_index[x] = [sim_index[i, 0, 0, 0].item() for i in range(bs)]
+
+            # construct attention_scores -> [64, 1, 36, 64]
+            key_layer_choose = torch.zeros_like(key_layer[:, 0, :, :].unsqueeze(1))
+            # choose the optimal key_layer followed by all_sim_index
+            for i in range(bs):
+                key_layer_choose[i, :, :, :] = key_layer[i, all_sim_index[x][i], :, :]
+            # matmul: -> [bs, 1, token_size_q, token_size_k]
+            attention_scores[:, x, :, :] += torch.matmul(query_layer[:, x, :, :], key_layer_choose[:, 0, :, :].transpose(-1, -2))
             # max: -> [bs, token_size_q, token_size_k]
-            sim_matrix, sim_index = torch.max(sim_matrix, dim=1)  # 在维度1上进行max操作
-            print("sim_matrix.shape", sim_matrix.shape)  # [64, 20, 36]
-            print("sim_index.shape", sim_index.shape)  # [64, 20, 36]
-            # squeeze: -> [bs, token_size_q, token_size_k]
-            attention_scores[:, x, :, :] += sim_matrix
-            all_sim_index[:, x, :, :] += sim_index  # [64, 12, 20, 36]
+            # sim_matrix, sim_index = torch.max(sim_matrix, dim=1)  # 在维度1上进行max操作
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
@@ -602,35 +608,21 @@ class BertMaxPoolingAttention(nn.Module):
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
-        print("attention_probs.shape", attention_probs.shape)  # [64, 12, 20, 36]
 
         # Initialize a tensor to store the new attention scores
         context_layer = torch.zeros_like(attention_probs @ value_layer)
         # Combine the query and key layers follow MaxPooling-Attention
         for x in range(self.num_attention_heads):
-            # unsqueeze: -> [bs, 1, token_size_q, token_size_k]
-            attention_probs_repeat = attention_probs[:, x, :, :].unsqueeze(1)
-            # repeat: -> [bs, num_attention_heads, token_size_q, token_size_k]
-            attention_probs_repeat = attention_probs_repeat.repeat(1, self.num_attention_heads, 1, 1)
-            # multiply: -> [bs, num_attention_heads, token_size_q, attention_head_size]
-            sim_matrix = torch.matmul(attention_probs_repeat, value_layer)
-            print("attention_probs.shape", attention_probs.shape)  # [64, 12, 20, 36]
-            print("value_layer.shape: ", value_layer.shape)  # [64, 12, 36, 64]
-            print("sim_matrix.shape: ", sim_matrix.shape)  # [64, 12, 20, 64]
-
-            # unsqueeze: -> [bs, 1, token_size_q, token_size_k]
-            all_sim_index_repeat = all_sim_index[:, x, :, :].unsqueeze(1)
-            # repeat: -> [bs, num_attention_heads, token_size_q, token_size_k]
-            all_sim_index_repeat = all_sim_index_repeat.repeat(1, self.num_attention_heads, 1, 1)
+            # 构造attention_scores -> [bs, 1, token_size_k, attention_head_size]
+            value_layer_choose = torch.zeros_like(value_layer[:, 0, :, :].unsqueeze(1))
+            bs = value_layer.shape[0]
+            # choose the optimal value_layer followed by all_sim_index
+            for i in range(bs):
+                value_layer_choose[i, :, :, :] = value_layer[i, all_sim_index[x][i], :, :]
+            # matmul: -> [bs, 1, token_size_q, attention_head_size]
+            context_layer[:, x, :, :] += torch.matmul(attention_probs[:, x, :, :], value_layer_choose[:, 0, :, :])
             # gather: -> [bs, num_attention_heads, token_size_q, attention_head_size]
-            sim_matrix = torch.gather(sim_matrix, dim=1, index=all_sim_index_repeat)  # 按照QK点积的最大值的索引进行gather
-            print("sim_matrix.shape: ", sim_matrix.shape)  # [64, 12, 20, 64]
-            print("all_sim_index.shape: ", all_sim_index.shape)  # [64, 12, 20, 36]
-            print("sim_matrix.shape: ", sim_matrix.shape)  # [64, 12, 20, 36]
-            print("context_layer[:, x, :, :].shape: ", context_layer[:, x, :, :].shape)  # [64, 20, 64]
-
-            # squeeze: -> [bs, token_size, attention_head_size]
-            context_layer[:, x, :, :] += torch.squeeze(sim_matrix, dim=1)
+            # sim_matrix = torch.gather(sim_matrix, dim=1, index=all_sim_index_repeat)  # 按照QK点积的最大值的索引进行gather
 
         # 调换维度,准备合并多头
         # [bs, num_attention_heads, token_size, attention_head_size] -> [bs, token_size, num_attention_heads, attention_head_size]

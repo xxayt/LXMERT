@@ -127,7 +127,7 @@ class VQA:
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         self.logger.info('Training time {}'.format(total_time_str))
 
-    def predict(self, eval_tuple: DataTuple, dump=None):
+    def predict(self, eval_tuple, dump=None):
         """
         Predict the answers to questions in a data split.
 
@@ -151,7 +151,7 @@ class VQA:
             evaluator.dump_result(quesid2ans, dump)
         return quesid2ans
 
-    def evaluate(self, eval_tuple: DataTuple, dump=None):
+    def evaluate(self, eval_tuple, dump=None):
         """Evaluate all data in data_tuple."""
         quesid2ans = self.predict(eval_tuple, dump)
         return eval_tuple.evaluator.evaluate(quesid2ans)
