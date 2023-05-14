@@ -37,7 +37,7 @@ bash run/vqa_test.bash 0 vqa_src_base_results --test test --load logs/vqa/vqa_ba
 bash run/vqa2_test.bash 0 vqa2_large_base_results --test test --load logs/vqa/vqa2_large_base/vqa2_large_base-Best.pth
 bash run/vqa2_test.bash 0 vqa2_large_exchange_results --type exchange --test test --load logs/vqa/vqa2_large_exchange/vqa2_large_exchange-Best.pth
 bash run/vqa2_test.bash 0 vqa2_large_meanpooling_results --type meanpooling --test test --load logs/vqa/vqa2_large_meanpooling/vqa2_large_meanpooling-Best.pth
-bash run/vqa2_test.bash 0 vqa2_large_maxpooling_results --test test --load logs/vqa/vqa2_large_maxpooling/vqa2_large_maxpooling-Best.pth
+bash run/vqa2_test.bash 0 vqa2_large_maxpooling_results --type maxpooling --test test --load logs/vqa/vqa2_large_maxpooling/vqa2_large_maxpooling-Best.pth
 
 # scp
 scp -P 5102 zijie_xin@183.174.228.151:~/GeWu-Lab/LXMERT/logs/vqa/vqa_src_base_results/test_predict.json D:\2Codefield\VS_code\python\GeWuLab\LXMERT\logs\vqa\vqa_src_base_results

@@ -296,10 +296,6 @@ class BertAttention(nn.Module):
         return x
 
     def forward(self, hidden_states, context, attention_mask=None):
-        '''
-        token_size = token_size
-        hidden_size = embedding_size
-        '''
         # hidden_states -> query; context -> key, value
         # [bs, token_size, v_hidden_size] -> [bs, token_size, all_head_size]
         mixed_query_layer = self.query(hidden_states)
